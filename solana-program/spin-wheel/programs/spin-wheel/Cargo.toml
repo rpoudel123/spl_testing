@@ -1,0 +1,21 @@
+[package]
+name = "spin-wheel"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "spin_wheel"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+
+[dependencies]
+anchor-lang = "0.28.0"
+solana-program = "=1.16.0"
+ahash = "=0.8.6"
