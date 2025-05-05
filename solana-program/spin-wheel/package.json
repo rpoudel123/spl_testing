@@ -7,7 +7,8 @@
     "create-keypair": "node scripts/create-keypair.js"
   },
   "dependencies": {
-    "@solana/spl-token": "^0.4.6"
+    "@solana/spl-token": "^0.4.6",
+    "@solana/spl-token-metadata": "^0.1.4"
   },
   "devDependencies": {
     "@types/chai": "^4.3.4",

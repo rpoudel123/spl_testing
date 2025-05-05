@@ -14,10 +14,21 @@ pub mod spin_wheel {
 
     pub fn initialize_token_2022(
         ctx: Context<InitializeToken2022>,
+        decimals: u8,
         transfer_fee_basis_points: u16,
         maximum_fee: u64,
+        name: String,
+        symbol: String,
+        uri: String,
     ) -> Result<()> {
-        process_initialize(ctx, transfer_fee_basis_points, maximum_fee)
+        let metadata_args = TokenMetadataArgs { name, symbol, uri };
+        process_initialize(
+            ctx,
+            decimals,
+            transfer_fee_basis_points,
+            maximum_fee,
+            metadata_args,
+        )
     }
 
     pub fn transfer(ctx: Context<Transfer>, amount: u64) -> Result<()> {
@@ -38,5 +49,21 @@ pub mod spin_wheel {
         maximum_fee: u64,
     ) -> Result<()> {
         process_update_fee(ctx, transfer_fee_basis_points, maximum_fee)
+    }
+
+    pub fn update_field(ctx: Context<UpdateField>, args: UpdateFieldArgs) -> Result<()> {
+        process_update_field(ctx, args)
+    }
+
+    pub fn remove_key(ctx: Context<RemoveKey>, key: String) -> Result<()> {
+        process_remove_key(ctx, key)
+    }
+
+    pub fn emit(ctx: Context<Emit>) -> Result<()> {
+        process_emit(ctx)
+    }
+
+    pub fn update_authority(ctx: Context<UpdateAuthority>) -> Result<()> {
+        process_update_authority(ctx)
     }
 }
