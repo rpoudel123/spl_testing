@@ -1,43 +1,25 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::rent::{
-    DEFAULT_EXEMPTION_THRESHOLD, DEFAULT_LAMPORTS_PER_BYTE_YEAR,
-};
-use anchor_lang::system_program::{create_account, transfer, CreateAccount, Transfer};
-use anchor_spl::{
-    token_2022::{
-        initialize_mint2,
-        spl_token_2022::{
-            extension::{
-                metadata_pointer::MetadataPointer, transfer_fee::TransferFeeConfig,
-                BaseStateWithExtensions, ExtensionType, StateWithExtensions,
-            },
-            pod::PodMint,
-            state::Mint as MintState,
-        },
-        InitializeMint2,
+use anchor_lang::solana_program::rent::Rent;
+use anchor_lang::solana_program::{program_error::ProgramError, program_option::COption};
+use anchor_lang::system_program::{create_account, CreateAccount};
+use anchor_lang::system_program::{transfer as system_transfer, Transfer as SystemTransfer};
+use anchor_spl::token_2022::{
+    initialize_mint2,
+    spl_token_2022::{
+        extension::{ExtensionType, PodStateWithExtensions},
+        pod::PodMint,
     },
-    token_interface::{
-        metadata_pointer_initialize, spl_pod::optional_keys::OptionalNonZeroPubkey,
-        token_metadata_initialize, transfer_fee_initialize, MetadataPointerInitialize, Mint,
-        Token2022, TokenMetadataInitialize, TransferFeeInitialize,
-    },
+    InitializeMint2,
 };
+use anchor_spl::token_interface::Mint;
+use anchor_spl::token_interface::Token2022;
+use anchor_spl::token_interface::{
+    metadata_pointer_initialize, spl_pod::optional_keys::OptionalNonZeroPubkey,
+    token_metadata_initialize, MetadataPointerInitialize, TokenMetadataInitialize,
+};
+use anchor_spl::token_interface::{transfer_fee_initialize, TransferFeeInitialize};
 use spl_token_metadata_interface::state::TokenMetadata;
 use spl_type_length_value::variable_len_pack::VariableLenPack;
-
-use anchor_lang::solana_program::program_error::ProgramError;
-use anchor_lang::solana_program::program_option::COption;
-use anchor_lang::solana_program::rent::Rent;
-
-#[derive(Accounts)]
-pub struct InitializeToken2022<'info> {
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    #[account(mut)]
-    pub mint_account: Signer<'info>,
-    pub token_program: Program<'info, Token2022>,
-    pub system_program: Program<'info, System>,
-}
 
 #[derive(AnchorDeserialize, AnchorSerialize, Clone)]
 pub struct TokenMetadataArgs {
@@ -46,69 +28,59 @@ pub struct TokenMetadataArgs {
     pub uri: String,
 }
 
-pub fn process_initialize(
-    ctx: Context<InitializeToken2022>,
+#[derive(Accounts)]
+pub struct InitializeFeeMint<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut)]
+    pub mint_account: Signer<'info>,
+    pub token_program: Program<'info, Token2022>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn process_initialize_fee_mint(
+    ctx: Context<InitializeFeeMint>,
     decimals: u8,
     transfer_fee_basis_points: u16,
     maximum_fee: u64,
-    metadata_args: TokenMetadataArgs,
 ) -> Result<()> {
-    msg!("process_initialize entered!");
-    let payer_key = ctx.accounts.payer.key();
-    let mint_key = ctx.accounts.mint_account.key();
+    msg!("process_initialize_fee_mint entered!");
+    let payer_account_info = ctx.accounts.payer.to_account_info();
+    let payer_key = payer_account_info.key();
+    let mint_account_info = ctx.accounts.mint_account.to_account_info();
+    let system_program_info = ctx.accounts.system_program.to_account_info();
+    let token_program_info = ctx.accounts.token_program.to_account_info();
 
-    let extensions_to_init = [
-        ExtensionType::TransferFeeConfig,
-        ExtensionType::MetadataPointer,
-    ];
-
-    let base_size = ExtensionType::try_calculate_account_len::<PodMint>(&extensions_to_init)?;
-
-    let metadata = TokenMetadata {
-        update_authority: OptionalNonZeroPubkey::try_from(Some(payer_key))?,
-        mint: mint_key,
-        name: metadata_args.name.clone(),
-        symbol: metadata_args.symbol.clone(),
-        uri: metadata_args.uri.clone(),
-        additional_metadata: vec![],
-    };
-
-    msg!("Calculating size for Mint + TransferFeeConfig only...");
-    let extensions_for_now = [ExtensionType::TransferFeeConfig]; // Only TF
-    let size_for_now = ExtensionType::try_calculate_account_len::<PodMint>(&extensions_for_now)?;
-
-    let variable_metadata_size = metadata.get_packed_len()? + 4;
-    // let mint_size = base_size + variable_metadata_size;
-    let mint_size = size_for_now;
-    msg!("Calculated temporary mint account size: {}", mint_size);
+    msg!("Calculating size for Mint + TransferFeeConfig...");
+    let extensions = [ExtensionType::TransferFeeConfig];
+    let mint_size = ExtensionType::try_calculate_account_len::<PodMint>(&extensions)?;
+    msg!("Calculated mint account size: {}", mint_size);
 
     let rent = Rent::get()?;
     let lamports = rent.minimum_balance(mint_size);
-
-    msg!("Calculated mint account size: {}", mint_size);
     msg!("Required lamports for rent exemption: {}", lamports);
 
     create_account(
         CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
+            system_program_info.clone(),
             CreateAccount {
-                from: ctx.accounts.payer.to_account_info(),
-                to: ctx.accounts.mint_account.to_account_info(),
+                from: payer_account_info.clone(),
+                to: mint_account_info.clone(),
             },
         ),
         lamports,
         mint_size as u64,
-        &ctx.accounts.token_program.key(),
+        token_program_info.key,
     )?;
     msg!("Mint account created");
 
     msg!("Initializing TransferFeeConfig extension...");
     transfer_fee_initialize(
         CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
+            token_program_info.clone(),
             TransferFeeInitialize {
-                token_program_id: ctx.accounts.token_program.to_account_info(),
-                mint: ctx.accounts.mint_account.to_account_info(),
+                token_program_id: token_program_info.clone(),
+                mint: mint_account_info.clone(),
             },
         ),
         Some(&payer_key),
@@ -116,91 +88,114 @@ pub fn process_initialize(
         transfer_fee_basis_points,
         maximum_fee,
     )?;
-
-    // msg!("Initializing MetadataPointer extension...");
-    // metadata_pointer_initialize(
-    //     CpiContext::new(
-    //         ctx.accounts.token_program.to_account_info(),
-    //         MetadataPointerInitialize {
-    //             token_program_id: ctx.accounts.token_program.to_account_info(),
-    //             mint: ctx.accounts.mint_account.to_account_info(),
-    //         },
-    //     ),
-    //     Some(payer_key),
-    //     Some(mint_key),
-    // )?;
+    msg!("TransferFee Initialized");
 
     msg!("Initializing base Mint data...");
     initialize_mint2(
         CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
+            token_program_info.clone(),
             InitializeMint2 {
-                mint: ctx.accounts.mint_account.to_account_info(),
+                mint: mint_account_info.clone(),
             },
         ),
         decimals,
         &payer_key,
         Some(&payer_key),
     )?;
+    msg!("Base Mint Initialized");
 
-    // msg!("Initializing Metadata content...");
-    // token_metadata_initialize(
-    //     CpiContext::new(
-    //         ctx.accounts.token_program.to_account_info(),
-    //         TokenMetadataInitialize {
-    //             token_program_id: ctx.accounts.token_program.to_account_info(),
-    //             mint: ctx.accounts.mint_account.to_account_info(),
-    //             metadata: ctx.accounts.mint_account.to_account_info(),
-    //             mint_authority: ctx.accounts.payer.to_account_info(),
-    //             update_authority: ctx.accounts.payer.to_account_info(),
-    //         },
-    //     ),
-    //     metadata_args.name,
-    //     metadata_args.symbol,
-    //     metadata_args.uri,
-    // )?;
-
-    // msg!("Mint with Transfer Fee and Metadata initialized successfully!");
-    msg!("Initialization partially complete (create(temp size), fee, mint done).");
+    msg!("Fee Mint initialization complete.");
     Ok(())
 }
 
-impl<'info> InitializeToken2022<'info> {
-    pub fn check_mint_data(&self) -> Result<()> {
-        let mint_info = &self.mint_account.to_account_info();
-        let mint_data = mint_info.data.borrow();
-        let mint_with_extensions = StateWithExtensions::<MintState>::unpack(&mint_data)?;
+#[derive(Accounts)]
+pub struct AddMetadata<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut)]
+    pub mint_account: InterfaceAccount<'info, Mint>,
+    pub update_authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token2022>,
+}
 
-        msg!("Checking TransferFeeConfig...");
-        let transfer_fee_config = mint_with_extensions.get_extension::<TransferFeeConfig>()?;
-        assert_eq!(
-            transfer_fee_config.transfer_fee_config_authority,
-            OptionalNonZeroPubkey::try_from(Some(self.payer.key()))
-                .map_err(|_| ProgramError::InvalidAccountData)?
-        );
-        assert_eq!(
-            transfer_fee_config.withdraw_withheld_authority,
-            OptionalNonZeroPubkey::try_from(Some(self.payer.key()))
-                .map_err(|_| ProgramError::InvalidAccountData)?
-        );
-        msg!("Transfer Fee Config Data: {:?}", transfer_fee_config);
+pub fn process_add_metadata(
+    ctx: Context<AddMetadata>,
+    metadata_args: TokenMetadataArgs,
+) -> Result<()> {
+    msg!("process_add_metadata entered!");
+    let payer_account_info = ctx.accounts.payer.to_account_info();
+    let mint_account_info = ctx.accounts.mint_account.to_account_info();
+    let mint_key = mint_account_info.key();
+    let update_authority_key = ctx.accounts.update_authority.key();
+    let update_authority_info = ctx.accounts.update_authority.to_account_info();
+    let token_program_info = ctx.accounts.token_program.to_account_info();
+    let system_program_info = ctx.accounts.system_program.to_account_info();
 
-        msg!("Checking MetadataPointer...");
-        let metadata_pointer = mint_with_extensions.get_extension::<MetadataPointer>()?;
-        assert_eq!(
-            metadata_pointer.authority,
-            OptionalNonZeroPubkey::try_from(Some(self.payer.key()))
-                .map_err(|_| ProgramError::InvalidAccountData)?
-        );
-        assert_eq!(
-            metadata_pointer.metadata_address,
-            OptionalNonZeroPubkey::try_from(Some(self.mint_account.key()))
-                .map_err(|_| ProgramError::InvalidAccountData)?
-        );
-        msg!("Metadata Pointer Data: {:?}", metadata_pointer);
+    msg!("Initializing MetadataPointer extension...");
+    metadata_pointer_initialize(
+        CpiContext::new(
+            token_program_info.clone(),
+            MetadataPointerInitialize {
+                token_program_id: token_program_info.clone(),
+                mint: mint_account_info.clone(),
+            },
+        ),
+        Some(update_authority_key),
+        Some(mint_key),
+    )?;
+    msg!("MetadataPointer Initialized");
 
-        msg!("Metadata content check requires TLV parsing (not shown here).");
+    msg!("Calculating size needed for metadata TLV entry...");
+    let metadata = TokenMetadata {
+        update_authority: OptionalNonZeroPubkey::try_from(Some(update_authority_key))?,
+        mint: mint_key,
+        name: metadata_args.name.clone(),
+        symbol: metadata_args.symbol.clone(),
+        uri: metadata_args.uri.clone(),
+        additional_metadata: vec![],
+    };
+    let metadata_tlv_size = metadata.get_packed_len()? + 4;
+    msg!("Metadata TLV entry size: {}", metadata_tlv_size);
 
-        Ok(())
+    let rent = Rent::get()?;
+    let additional_lamports = rent.minimum_balance(metadata_tlv_size);
+    msg!(
+        "Additional lamports for metadata rent: {}",
+        additional_lamports
+    );
+
+    if additional_lamports > 0 {
+        msg!("Transferring additional lamports for metadata rent...");
+        system_transfer(
+            CpiContext::new(
+                system_program_info.clone(),
+                SystemTransfer {
+                    from: payer_account_info.clone(),
+                    to: mint_account_info.clone(),
+                },
+            ),
+            additional_lamports,
+        )?;
     }
+
+    msg!("Initializing Metadata content...");
+    token_metadata_initialize(
+        CpiContext::new(
+            token_program_info.clone(),
+            TokenMetadataInitialize {
+                token_program_id: token_program_info.clone(),
+                mint: mint_account_info.clone(),
+                metadata: mint_account_info.clone(),
+                mint_authority: update_authority_info.clone(),
+                update_authority: update_authority_info.clone(),
+            },
+        ),
+        metadata_args.name,
+        metadata_args.symbol,
+        metadata_args.uri,
+    )?;
+    msg!("Metadata Content Initialized");
+    msg!("Metadata added successfully.");
+    Ok(())
 }

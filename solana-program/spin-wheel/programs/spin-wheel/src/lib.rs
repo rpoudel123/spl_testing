@@ -12,23 +12,17 @@ declare_id!("21HrGEnTMroXcp54bTCQKmgYS3uvbczsMRV6cBWGAnDV");
 pub mod spin_wheel {
     use super::*;
 
-    pub fn initialize_token_2022(
-        ctx: Context<InitializeToken2022>,
+    pub fn initialize_fee_mint(
+        ctx: Context<InitializeFeeMint>,
         decimals: u8,
         transfer_fee_basis_points: u16,
         maximum_fee: u64,
-        name: String,
-        symbol: String,
-        uri: String,
     ) -> Result<()> {
-        let metadata_args = TokenMetadataArgs { name, symbol, uri };
-        process_initialize(
-            ctx,
-            decimals,
-            transfer_fee_basis_points,
-            maximum_fee,
-            metadata_args,
-        )
+        process_initialize_fee_mint(ctx, decimals, transfer_fee_basis_points, maximum_fee)
+    }
+
+    pub fn add_metadata(ctx: Context<AddMetadata>, metadata_args: TokenMetadataArgs) -> Result<()> {
+        process_add_metadata(ctx, metadata_args)
     }
 
     pub fn transfer(ctx: Context<Transfer>, amount: u64) -> Result<()> {

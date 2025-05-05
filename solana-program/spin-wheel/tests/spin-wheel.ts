@@ -7,6 +7,7 @@ import {
   getOrCreateAssociatedTokenAccount,
   mintTo,
   getAccount,
+  Account as TokenAccount
 } from "@solana/spl-token";
 
 import { unpack } from "@solana/spl-token-metadata";
@@ -23,7 +24,17 @@ describe("spin-wheel (Combined Transfer Fee & Metadata)", () => {
 
   const mintKeypair = new anchor.web3.Keypair();
   const recipient = new anchor.web3.Keypair();
-
+  const decimals = 2;
+  const transferFeeBasisPoints = 100;
+  const maximumFee = new anchor.BN(1 * 10 ** decimals);
+  const metadata = {
+    name: "Cashino",
+    symbol: "CASH",
+    uri: "https://raw.githubusercontent.com/rpoudel123/spl_testing/refs/heads/main/cashino.json",
+  };
+  const initialMintAmount = 300 * 10 ** decimals;
+  const transferAmount1 = 100 * 10 ** decimals;
+  const transferAmount2 = 200 * 10 ** decimals;
   const senderTokenAccountAddress = getAssociatedTokenAddressSync(
     mintKeypair.publicKey,
     wallet.publicKey,
@@ -37,42 +48,45 @@ describe("spin-wheel (Combined Transfer Fee & Metadata)", () => {
     TOKEN_2022_PROGRAM_ID
   );
 
-  const decimals = 2;
-  const transferFeeBasisPoints = 100;
-  const maximumFee = new anchor.BN(1 * 10 ** decimals);
-  const metadata = {
-    name: "Cashino",
-    symbol: "CASH",
-    uri: "https://raw.githubusercontent.com/rpoudel123/spl_testing/refs/heads/main/cashino.json",
-  };
-  const initialMintAmount = 300 * 10 ** decimals;
-  const transferAmount1 = 100 * 10 ** decimals;
-  const transferAmount2 = 200 * 10 ** decimals;
-
   it("Initialize Mint with Transfer Fee and Metadata", async () => {
     console.log("Mint Pubkey:", mintKeypair.publicKey.toBase58());
-    const transactionSignature = await program.methods
-      .initializeToken2022(
+    const txSignature = await program.methods
+      .initializeFeeMint(
         decimals,
         transferFeeBasisPoints,
-        maximumFee,
-        metadata.name,
-        metadata.symbol,
-        metadata.uri
+        maximumFee
       )
       .accounts({
         mintAccount: mintKeypair.publicKey,
         payer: wallet.publicKey,
+        // @ts-ignore-next-line
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
       })
       .signers([mintKeypair])
       .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Initialize Transaction Signature:", transactionSignature);
+    console.log("Initialize Transaction Signature:", txSignature);
 
     await new Promise(resolve => setTimeout(resolve, 2000));
     const mintInfo = await connection.getAccountInfo(mintKeypair.publicKey);
-    assert(mintInfo !== null, "Mint account should exist");
+    assert(mintInfo !== null, "Mint account should exist after init fee mint");
+    assert(mintInfo.data.length > 0, "Mint account data should not be empty");
+  });
+
+  it("Add Metadata", async () => {
+    const txSignature = await program.methods
+      .addMetadata(metadata)
+      .accounts({
+        mintAccount: mintKeypair.publicKey,
+        payer: wallet.publicKey,
+        updateAuthority: wallet.publicKey,
+        // @ts-ignore-next-line
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .rpc({ skipPreflight: true, commitment: "confirmed" });
+    console.log("Add Metadata Signature:", txSignature);
+    // Need to add a check to verify metadata was added
   });
 
   it("Mint Tokens to Sender", async () => {
@@ -126,10 +140,11 @@ describe("spin-wheel (Combined Transfer Fee & Metadata)", () => {
         sender: wallet.publicKey,
         recipient: recipient.publicKey,
         mintAccount: mintKeypair.publicKey,
-        // senderTokenAccount: senderTokenAccountAddress,
-        // recipientTokenAccount: recipientTokenAccountAddress,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
+        // @ts-ignore-next-line
+        senderTokenAccount: senderTokenAccountAddress,
+        recipientTokenAccount: recipientTokenAccountAddress,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
       })
       .rpc({ skipPreflight: true, commitment: "confirmed" });
     console.log("Transfer 1 Signature:", transactionSignature);
