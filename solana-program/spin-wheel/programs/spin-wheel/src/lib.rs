@@ -1,13 +1,22 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{
-    clock::Clock, hash::hash, program::invoke_signed, system_instruction,
-};
-use std::convert::TryInto;
 mod instructions;
 use instructions::*;
 
 declare_id!("21HrGEnTMroXcp54bTCQKmgYS3uvbczsMRV6cBWGAnDV");
 
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Bump seed not found for PDA.")]
+    BumpSeedNotInHashMap,
+    #[msg("Transfer amount is less than the calculated fee.")]
+    TransferAmountLessThanFee,
+    #[msg("Fee calculation failed.")]
+    FeeCalculationFailed,
+    #[msg("Invalid mint account provided.")]
+    InvalidMintAccount,
+}
+
+pub const MINT_AUTHORITY_SEED: &[u8] = b"mint_authority";
 #[program]
 pub mod spin_wheel {
     use super::*;
@@ -18,6 +27,10 @@ pub mod spin_wheel {
         maximum_fee: u64,
     ) -> Result<()> {
         process_initialize(ctx, transfer_fee_basis_points, maximum_fee)
+    }
+
+    pub fn mint_tokens_to_account(ctx: Context<MintTokensToAccount>, amount: u64) -> Result<()> {
+        process_mint_tokens(ctx, amount)
     }
 
     pub fn transfer(ctx: Context<Transfer>, amount: u64) -> Result<()> {

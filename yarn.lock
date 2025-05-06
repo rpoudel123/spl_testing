@@ -677,6 +677,103 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@metaplex-foundation/mpl-core@npm:^1.3.0":
+  version: 1.3.0
+  resolution: "@metaplex-foundation/mpl-core@npm:1.3.0"
+  dependencies:
+    "@msgpack/msgpack": ^3.0.0-beta2
+  peerDependencies:
+    "@metaplex-foundation/umi": ">=0.8.2 <= 1.0"
+    "@noble/hashes": ^1.3.1
+  checksum: b0286ae0b34715f01af915cc4beb879aec691f0fb76936080916d36a67a1b89a8b9e50b6aa80c7fd285e453657f751143023bef8d9eb5b117486e616407fd10a
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/mpl-token-metadata@npm:^3.4.0":
+  version: 3.4.0
+  resolution: "@metaplex-foundation/mpl-token-metadata@npm:3.4.0"
+  dependencies:
+    "@metaplex-foundation/mpl-toolbox": ^0.10.0
+  peerDependencies:
+    "@metaplex-foundation/umi": ">= 0.8.2 <= 1"
+  checksum: 1ed4e901938a3865de5683dbdaa4f20ee719b08e86b8824325d6b4561066c8ced25562f0970f58ac415fc3f28a4455bf7ae7fab4eef85b24b86623d6ac5a70ca
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/mpl-toolbox@npm:^0.10.0":
+  version: 0.10.0
+  resolution: "@metaplex-foundation/mpl-toolbox@npm:0.10.0"
+  peerDependencies:
+    "@metaplex-foundation/umi": ">= 0.8.2 <= 1"
+  checksum: 8970586ce8a3684aa2cb274d3579450711fc636626dd9582fc9ae4213c0b3025f97062ad3f7561ed13d6d27b52c26f6a6b2f9d1685e6426d069335b1a8d4188e
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi-options@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi-options@npm:1.2.0"
+  checksum: 3502bf2cba62536fcc2e48ce422b32009169c7f564932e1c2ac6aad683c0ec79ff23647b7e7b5b6d6641966d9ffc6dcae39253e009b3160f81bf8d5f0659b1be
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi-public-keys@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi-public-keys@npm:1.2.0"
+  dependencies:
+    "@metaplex-foundation/umi-serializers-encodings": ^1.2.0
+  checksum: 53f23d46f493d5b4d9d4adfa9a81983d9d66b7919a61b01313f1208a3ac539d25cfcd5c22bf321ceb93dc22d75974e90ea981f976c9804d0513b0f621777db5a
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi-serializers-core@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi-serializers-core@npm:1.2.0"
+  checksum: 793a014b66694c9ff3c12fc5763bd9100166f75148b1655e09fd3d0188c7214df3642c7e2bea7296a5d86ac04c8123048fb92eaa17ab0cd0479c69c84a628f09
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi-serializers-encodings@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi-serializers-encodings@npm:1.2.0"
+  dependencies:
+    "@metaplex-foundation/umi-serializers-core": ^1.2.0
+  checksum: a83733c508146a71352b2b7a123e22b04d5af464da71fab4c2095595e42da31bf480b333ac8138091892641b04fbb09d03b3bec24a1e190583a4ece4f0f012cf
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi-serializers-numbers@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi-serializers-numbers@npm:1.2.0"
+  dependencies:
+    "@metaplex-foundation/umi-serializers-core": ^1.2.0
+  checksum: 36b299c4b072d7d7ba866b078b69b27db9c9f200735c221daf14d6f7bb1dc5dee4e1c2fdbad63a06b9440f5cc8ba584d444c7def912568aeacb6669d52daa745
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi-serializers@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi-serializers@npm:1.2.0"
+  dependencies:
+    "@metaplex-foundation/umi-options": ^1.2.0
+    "@metaplex-foundation/umi-public-keys": ^1.2.0
+    "@metaplex-foundation/umi-serializers-core": ^1.2.0
+    "@metaplex-foundation/umi-serializers-encodings": ^1.2.0
+    "@metaplex-foundation/umi-serializers-numbers": ^1.2.0
+  checksum: b31438a335af20de9346b7f5482b34da7c296b6681b3434ec18f630750034051cd00562be740b920dc4849786698a7625e9cbf21d354ed5a120781efd5f44982
+  languageName: node
+  linkType: hard
+
+"@metaplex-foundation/umi@npm:^1.2.0":
+  version: 1.2.0
+  resolution: "@metaplex-foundation/umi@npm:1.2.0"
+  dependencies:
+    "@metaplex-foundation/umi-options": ^1.2.0
+    "@metaplex-foundation/umi-public-keys": ^1.2.0
+    "@metaplex-foundation/umi-serializers": ^1.2.0
+  checksum: b7d548015591ab291a4103f06dceeb4800dce1a45dce954dd9571aa5b23277d8753bf15d102ff7c6b946f402c7e6197601e6cfedf985924565d70f95cfb30dfc
+  languageName: node
+  linkType: hard
+
 "@mobily/ts-belt@npm:^3.13.1":
   version: 3.13.1
   resolution: "@mobily/ts-belt@npm:3.13.1"
@@ -699,6 +796,13 @@ __metadata:
     zod: ^3.23.8
     zod-to-json-schema: ^3.24.1
   checksum: d0ab5cfac6eedc1c2a2bf63fec97021f174a8eb265e8f4189cfa353d4c267cd94359a819b8012e64f4e93ebc283546c2ecc3cb8034a3924b483b85595c5d24a0
+  languageName: node
+  linkType: hard
+
+"@msgpack/msgpack@npm:^3.0.0-beta2":
+  version: 3.1.1
+  resolution: "@msgpack/msgpack@npm:3.1.1"
+  checksum: 41f608f4f7922b123820f66a6ed33cbd09dee5e8f2686d7fb3f31908b4025ababd5ffcd83abe2525fd9212c2ccfa832eee32d7a4808c3673757eeb362345321b
   languageName: node
   linkType: hard
 
@@ -11176,6 +11280,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "spin-wheel@workspace:solana-program/spin-wheel"
   dependencies:
+    "@metaplex-foundation/mpl-core": ^1.3.0
+    "@metaplex-foundation/mpl-token-metadata": ^3.4.0
+    "@metaplex-foundation/umi": ^1.2.0
     "@solana/spl-token": ^0.4.6
     "@solana/spl-token-metadata": ^0.1.4
     "@types/chai": ^4.3.4

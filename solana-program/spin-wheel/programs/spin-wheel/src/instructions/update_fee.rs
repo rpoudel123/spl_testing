@@ -12,9 +12,25 @@ pub struct UpdateFee<'info> {
 
 pub fn process_update_fee(
     ctx: Context<UpdateFee>,
-    transfer_fee_basis_points: u16,
-    maximum_fee: u64,
+    new_transfer_fee_basis_points: u16,
+    new_maximum_fee: u64,
 ) -> Result<()> {
+    msg!("--- Instruction: UpdateFee ---");
+    msg!(
+        "Authority (expected Transfer Fee Config Authority): {}",
+        ctx.accounts.authority.key()
+    );
+    msg!(
+        "Mint Account to update: {}",
+        ctx.accounts.mint_account.key()
+    );
+    msg!("Token Program: {}", ctx.accounts.token_program.key());
+    msg!(
+        "Attempting to set new Transfer Fee Basis Points: {}",
+        new_transfer_fee_basis_points
+    );
+    msg!("Attempting to set new Maximum Fee: {}", new_maximum_fee);
+
     transfer_fee_set(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -24,8 +40,15 @@ pub fn process_update_fee(
                 authority: ctx.accounts.authority.to_account_info(),
             },
         ),
-        transfer_fee_basis_points,
-        maximum_fee,
+        new_transfer_fee_basis_points,
+        new_maximum_fee,
     )?;
+
+    msg!("transfer_fee_set CPI successful.");
+    msg!(
+        "Transfer fee for mint {} updated.",
+        ctx.accounts.mint_account.key()
+    );
+    msg!("--- UpdateFee finished ---");
     Ok(())
 }

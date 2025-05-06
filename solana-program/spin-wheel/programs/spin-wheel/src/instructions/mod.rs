@@ -1,5 +1,10 @@
 pub mod initialize;
 pub use initialize::*;
+
+// Mint Tokens
+pub mod mint_tokens;
+pub use mint_tokens::*;
+
 // Transfer Fees
 pub mod transfer;
 pub use transfer::*;

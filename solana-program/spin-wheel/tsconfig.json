@@ -11,8 +11,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "types": [
-      "mocha",
-      "chai"
+      "mocha"
     ],
     "typeRoots": [
       "./node_modules/@types",
