@@ -9,12 +9,3 @@ pub mod withdraw;
 pub use withdraw::*;
 pub mod update_fee;
 pub use update_fee::*;
-// Metadata
-pub use update_field::*;
-pub mod update_field;
-pub use remove_key::*;
-pub mod remove_key;
-pub use emit::*;
-pub mod emit;
-pub use update_authority::*;
-pub mod update_authority;

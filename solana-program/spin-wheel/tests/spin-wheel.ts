@@ -1,20 +1,10 @@
 import * as anchor from "@coral-xyz/anchor";
 import type { Program } from "@coral-xyz/anchor";
 import { ASSOCIATED_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/utils/token";
-import {
-  TOKEN_2022_PROGRAM_ID,
-  getAssociatedTokenAddressSync,
-  getOrCreateAssociatedTokenAccount,
-  mintTo,
-  getAccount,
-  Account as TokenAccount
-} from "@solana/spl-token";
-
-import { unpack } from "@solana/spl-token-metadata";
+import { TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 import type { SpinWheel } from "../target/types/spin_wheel";
-import { assert } from "chai";
 
-describe("spin-wheel (Combined Transfer Fee & Metadata)", () => {
+describe('transfer-fee', () => {
   const provider = anchor.AnchorProvider.env();
   const connection = provider.connection;
   const wallet = provider.wallet as anchor.Wallet;
@@ -24,318 +14,96 @@ describe("spin-wheel (Combined Transfer Fee & Metadata)", () => {
 
   const mintKeypair = new anchor.web3.Keypair();
   const recipient = new anchor.web3.Keypair();
-  const decimals = 2;
-  const transferFeeBasisPoints = 100;
-  const maximumFee = new anchor.BN(1 * 10 ** decimals);
-  const metadata = {
-    name: "Cashino",
-    symbol: "CASH",
-    uri: "https://raw.githubusercontent.com/rpoudel123/spl_testing/refs/heads/main/cashino.json",
-  };
-  const initialMintAmount = 300 * 10 ** decimals;
-  const transferAmount1 = 100 * 10 ** decimals;
-  const transferAmount2 = 200 * 10 ** decimals;
-  const senderTokenAccountAddress = getAssociatedTokenAddressSync(
-    mintKeypair.publicKey,
-    wallet.publicKey,
-    false,
-    TOKEN_2022_PROGRAM_ID
-  );
-  const recipientTokenAccountAddress = getAssociatedTokenAddressSync(
-    mintKeypair.publicKey,
-    recipient.publicKey,
-    false,
-    TOKEN_2022_PROGRAM_ID
-  );
 
-  it("Initialize Mint with Transfer Fee and Metadata", async () => {
-    console.log("Mint Pubkey:", mintKeypair.publicKey.toBase58());
-    const txSignature = await program.methods
-      .initializeFeeMint(
-        decimals,
-        transferFeeBasisPoints,
-        maximumFee
-      )
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        payer: wallet.publicKey,
-        // @ts-ignore-next-line
-        systemProgram: anchor.web3.SystemProgram.programId,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
-      })
+  const senderTokenAccountAddress = getAssociatedTokenAddressSync(mintKeypair.publicKey, wallet.publicKey, false, TOKEN_2022_PROGRAM_ID);
+  const recipientTokenAccountAddress = getAssociatedTokenAddressSync(mintKeypair.publicKey, recipient.publicKey, false, TOKEN_2022_PROGRAM_ID);
+
+  it("Create Mint with Transfer Fee", async () => {
+    const transferFeeBasisPoints = 100;
+    const maximumFee = 1;
+
+    const transactionSignature = await program.methods
+      .initializeToken2022(transferFeeBasisPoints, new anchor.BN(maximumFee))
+      .accounts({ mintAccount: mintKeypair.publicKey })
       .signers([mintKeypair])
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Initialize Transaction Signature:", txSignature);
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    const mintInfo = await connection.getAccountInfo(mintKeypair.publicKey);
-    assert(mintInfo !== null, "Mint account should exist after init fee mint");
-    assert(mintInfo.data.length > 0, "Mint account data should not be empty");
+      .rpc({ skipPreflight: true });
+    console.log("Transaction Signature: ", transactionSignature);
   });
 
-  it("Add Metadata", async () => {
-    const txSignature = await program.methods
-      .addMetadata(metadata)
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        payer: wallet.publicKey,
-        updateAuthority: wallet.publicKey,
-        // @ts-ignore-next-line
-        systemProgram: anchor.web3.SystemProgram.programId,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Add Metadata Signature:", txSignature);
-    // Need to add a check to verify metadata was added
-  });
-
-  it("Mint Tokens to Sender", async () => {
+  it("Mint Tokens", async () => {
     await getOrCreateAssociatedTokenAccount(
       connection,
       wallet.payer,
       mintKeypair.publicKey,
       wallet.publicKey,
       false,
-      "confirmed",
+      undefined,
       undefined,
       TOKEN_2022_PROGRAM_ID,
-      ASSOCIATED_PROGRAM_ID
+      ASSOCIATED_PROGRAM_ID,
     );
-    console.log("Sender ATA:", senderTokenAccountAddress.toBase58());
 
-    await mintTo(
-      connection,
-      wallet.payer,
-      mintKeypair.publicKey,
-      senderTokenAccountAddress,
-      wallet.payer,
-      initialMintAmount,
-      [],
-      { commitment: "confirmed" },
-      TOKEN_2022_PROGRAM_ID
-    );
-    console.log(`Minted ${initialMintAmount} tokens to sender.`);
-
-    const senderAccountInfo = await getAccount(connection, senderTokenAccountAddress, "confirmed", TOKEN_2022_PROGRAM_ID);
-    assert.strictEqual(senderAccountInfo.amount.toString(), initialMintAmount.toString(), "Sender should have initial mint amount");
+    await mintTo(connection, wallet.payer, mintKeypair.publicKey, senderTokenAccountAddress, wallet.payer, 300, [], undefined, TOKEN_2022_PROGRAM_ID);
   });
 
-  it("Transfer with Fee", async () => {
-    await getOrCreateAssociatedTokenAccount(
-      connection,
-      wallet.payer,
-      mintKeypair.publicKey,
-      recipient.publicKey,
-      false,
-      "confirmed",
-      undefined,
-      TOKEN_2022_PROGRAM_ID,
-      ASSOCIATED_PROGRAM_ID
-    );
-    console.log("Recipient ATA:", recipientTokenAccountAddress.toBase58());
-
+  it("Transfer", async () => {
     const transactionSignature = await program.methods
-      .transfer(new anchor.BN(transferAmount1))
+      .transfer(new anchor.BN(100))
       .accounts({
         sender: wallet.publicKey,
         recipient: recipient.publicKey,
-        mintAccount: mintKeypair.publicKey,
-        // @ts-ignore-next-line
-        senderTokenAccount: senderTokenAccountAddress,
-        recipientTokenAccount: recipientTokenAccountAddress,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
+        mintAccount: mintKeypair.publicKey
       })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Transfer 1 Signature:", transactionSignature);
-
-    const senderAccountInfo = await getAccount(connection, senderTokenAccountAddress, "confirmed", TOKEN_2022_PROGRAM_ID);
-    const recipientAccountInfo = await getAccount(connection, recipientTokenAccountAddress, "confirmed", TOKEN_2022_PROGRAM_ID);
-    console.log("Sender balance after transfer 1:", senderAccountInfo.amount.toString());
-    console.log("Recipient balance after transfer 1:", recipientAccountInfo.amount.toString());
+      .rpc({ skipPreflight: true });
+    console.log("Your transaction signature", transactionSignature);
   });
 
-  it("Transfer Again, fee limited by maximumFee", async () => {
+  it('Transfer Again, fee limit by maximumFee', async () => {
     const transactionSignature = await program.methods
-      .transfer(new anchor.BN(transferAmount2))
+      .transfer(new anchor.BN(200))
       .accounts({
         sender: wallet.publicKey,
         recipient: recipient.publicKey,
-        mintAccount: mintKeypair.publicKey,
-        // senderTokenAccount: senderTokenAccountAddress,
-        // recipientTokenAccount: recipientTokenAccountAddress,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
+        mintAccount: mintKeypair.publicKey
       })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Transfer 2 Signature:", transactionSignature);
+      .rpc({ skipPreflight: true });
+    console.log('Your transaction signature', transactionSignature);
   });
 
-  it("Harvest Transfer Fees to Withdrawing Account", async () => {
-    const feeCollectorTokenAccount = senderTokenAccountAddress;
-    console.log("Attempting to harvest fees (implementation specific)...");
-    try {
-      const transactionSignature = await program.methods
-        .harvest()
-        .accounts({
-          mintAccount: mintKeypair.publicKey,
-          // authority: wallet.publicKey,
-          // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        })
-        .remainingAccounts([
-          {
-            pubkey: recipientTokenAccountAddress,
-            isSigner: false,
-            isWritable: true,
-          },
-          {
-            pubkey: senderTokenAccountAddress,
-            isSigner: false,
-            isWritable: true,
-          },
-        ])
-        .rpc({ skipPreflight: true, commitment: "confirmed" });
-      console.log("Harvest Signature:", transactionSignature);
-    } catch (e: any) {
-      console.warn("Harvest failed (maybe no fees to harvest or instruction mismatch):", e.message);
-    }
+  it('Harvest Transfer Fees to Mint Account', async () => {
+    const transactionSignature = await program.methods
+      .harvest()
+      .accounts({ mintAccount: mintKeypair.publicKey })
+      .remainingAccounts([
+        {
+          pubkey: recipientTokenAccountAddress,
+          isSigner: false,
+          isWritable: true,
+        },
+      ])
+      .rpc({ skipPreflight: true });
+    console.log('Your transaction signature', transactionSignature);
   });
 
-  it("Withdraw Transfer Fees from Mint to Token Account", async () => {
-    const destinationTokenAccount = senderTokenAccountAddress;
-    console.log("Attempting to withdraw harvested fees...");
-    try {
-      const transactionSignature = await program.methods
-        .withdraw()
-        .accounts({
-          mintAccount: mintKeypair.publicKey,
-          tokenAccount: destinationTokenAccount,
-          authority: wallet.publicKey,
-          // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        })
-        .rpc({ skipPreflight: true, commitment: "confirmed" });
-      console.log("Withdraw Signature:", transactionSignature);
-    } catch (e: any) {
-      console.warn("Withdraw failed (maybe no fees available):", e.message);
-    }
+  it('Withdraw Transfer Fees from Mint Account', async () => {
+    const transactionSignature = await program.methods
+      .withdraw()
+      .accounts({
+        mintAccount: mintKeypair.publicKey,
+        tokenAccount: senderTokenAccountAddress,
+      })
+      .rpc({ skipPreflight: true });
+    console.log('Your transaction signature', transactionSignature);
   });
 
-  it("Update Transfer Fee", async () => {
-    const newTransferFeeBasisPoints = 0;
-    const newMaximumFee = new anchor.BN(0);
+  it('Update Transfer Fee', async () => {
+    const transferFeeBasisPoints = 0;
+    const maximumFee = 0;
 
     const transactionSignature = await program.methods
-      .updateFee(newTransferFeeBasisPoints, newMaximumFee)
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        authority: wallet.publicKey,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Update Fee Signature:", transactionSignature);
-  });
-
-  it("Update existing metadata field (name)", async () => {
-    const newName = "Solana";
-    const transactionSignature = await program.methods
-      .updateField({
-        field: { name: {} },
-        value: newName,
-      })
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        authority: wallet.publicKey,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Update Name Signature:", transactionSignature);
-  });
-
-  it("Update metadata with custom field", async () => {
-    const customKey = "color";
-    const customValue = "red";
-    const transactionSignature = await program.methods
-      .updateField({
-        field: { key: [customKey] },
-        value: customValue,
-      })
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        authority: wallet.publicKey,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Add Custom Field Signature:", transactionSignature);
-  });
-
-  it("Remove custom field", async () => {
-    const customKeyToRemove = "color";
-    const transactionSignature = await program.methods
-      .removeKey(customKeyToRemove)
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        updateAuthority: wallet.publicKey,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Remove Key Signature:", transactionSignature);
-  });
-
-  it("Change update authority to None", async () => {
-    const transactionSignature = await program.methods
-      .updateAuthority()
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        currentAuthority: wallet.publicKey,
-        newAuthority: null,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-        // systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc({ skipPreflight: true, commitment: "confirmed" });
-    console.log("Update Authority to None Signature:", transactionSignature);
-  });
-
-  it("Emit metadata, decode transaction logs", async () => {
-    const txSignature = await program.methods
-      .emit()
-      .accounts({
-        mintAccount: mintKeypair.publicKey,
-        // tokenProgram: TOKEN_2022_PROGRAM_ID,
-      })
-      .rpc({ commitment: "confirmed", skipPreflight: true });
-    console.log("Emit (via tx logs) Signature:", txSignature);
-
-    const transactionResponse = await provider.connection.getTransaction(
-      txSignature,
-      {
-        commitment: "confirmed",
-        maxSupportedTransactionVersion: 0,
-      }
-    );
-
-    if (!transactionResponse || !transactionResponse.meta || !transactionResponse.meta.logMessages) {
-      console.error("Failed to fetch transaction details or logMessages are missing", { txSignature, transactionResponse });
-      throw new Error("Failed to fetch transaction details or logMessages are missing");
-    }
-
-    const prefix = "Program return: ";
-    let log = transactionResponse.meta.logMessages.find((log) =>
-      log.startsWith(prefix)
-    );
-    if (!log) {
-      console.warn("Could not find 'Program return:' log for emit instruction.");
-      return;
-    }
-    log = log.slice(prefix.length);
-    const [programId, data] = log.split(" ", 2);
-
-    const buffer = Buffer.from(data, "base64");
-    const decodedMetadata = unpack(buffer);
-    console.log("Emitted Metadata (via logs):", decodedMetadata);
-
-    assert.strictEqual(decodedMetadata.name, "Solana", "Name should have been updated");
+      .updateFee(transferFeeBasisPoints, new anchor.BN(maximumFee))
+      .accounts({ mintAccount: mintKeypair.publicKey })
+      .rpc({ skipPreflight: true });
+    console.log('Your transaction signature', transactionSignature);
   });
 });

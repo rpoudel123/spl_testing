@@ -12,17 +12,12 @@ declare_id!("21HrGEnTMroXcp54bTCQKmgYS3uvbczsMRV6cBWGAnDV");
 pub mod spin_wheel {
     use super::*;
 
-    pub fn initialize_fee_mint(
-        ctx: Context<InitializeFeeMint>,
-        decimals: u8,
+    pub fn initialize_token_2022(
+        ctx: Context<InitializeToken2022>,
         transfer_fee_basis_points: u16,
         maximum_fee: u64,
     ) -> Result<()> {
-        process_initialize_fee_mint(ctx, decimals, transfer_fee_basis_points, maximum_fee)
-    }
-
-    pub fn add_metadata(ctx: Context<AddMetadata>, metadata_args: TokenMetadataArgs) -> Result<()> {
-        process_add_metadata(ctx, metadata_args)
+        process_initialize(ctx, transfer_fee_basis_points, maximum_fee)
     }
 
     pub fn transfer(ctx: Context<Transfer>, amount: u64) -> Result<()> {
@@ -43,21 +38,5 @@ pub mod spin_wheel {
         maximum_fee: u64,
     ) -> Result<()> {
         process_update_fee(ctx, transfer_fee_basis_points, maximum_fee)
-    }
-
-    pub fn update_field(ctx: Context<UpdateField>, args: UpdateFieldArgs) -> Result<()> {
-        process_update_field(ctx, args)
-    }
-
-    pub fn remove_key(ctx: Context<RemoveKey>, key: String) -> Result<()> {
-        process_remove_key(ctx, key)
-    }
-
-    pub fn emit(ctx: Context<Emit>) -> Result<()> {
-        process_emit(ctx)
-    }
-
-    pub fn update_authority(ctx: Context<UpdateAuthority>) -> Result<()> {
-        process_update_authority(ctx)
     }
 }
