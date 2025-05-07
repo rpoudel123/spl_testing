@@ -74,15 +74,9 @@ describe('spin-wheel token tests with PDA mint authority', () => {
       TOKEN_2022_PROGRAM_ID
     );
 
-    assert.isTrue(mintInfo.mintAuthority.equals(mintAuthorityPda), "Mint authority should be the PDA");
-    assert.isTrue(mintInfo.freezeAuthority.equals(mintAuthorityPda), "Freeze authority should be the PDA");
+    assert.isTrue(mintInfo.mintAuthority?.equals(mintAuthorityPda), "Mint authority should be the PDA");
+    assert.isTrue(mintInfo.freezeAuthority?.equals(mintAuthorityPda), "Freeze authority should be the PDA");
     assert.strictEqual(mintInfo.decimals, 2, "Decimals should be 2");
-
-    // You can also fetch the mint account directly and check extensions if needed,
-    // but getMint already gives key authorities.
-    // const mintAccountData = await connection.getAccountInfo(mintKeypair.publicKey);
-    // console.log("Raw mint account data:", mintAccountData);
-    // Here you could use @solana/spl-token- következő functions to parse TransferFeeConfig if needed
 
     console.log(`Mint ${mintKeypair.publicKey.toBase58()} created successfully with PDA mint authority.`);
 
@@ -122,7 +116,6 @@ describe('spin-wheel token tests with PDA mint authority', () => {
     const transactionSignature = await program.methods
       .mintTokensToAccount(amountToMint)
       .accounts({
-
         mintAuthorityPda: mintAuthorityPda,
         mintAccount: mintKeypair.publicKey,
         recipientTokenAccount: senderTokenAccountAddress, // Minting to the wallet's ATA

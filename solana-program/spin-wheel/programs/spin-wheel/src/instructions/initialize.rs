@@ -1,17 +1,12 @@
 use crate::MINT_AUTHORITY_SEED;
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::rent::{
-    DEFAULT_EXEMPTION_THRESHOLD, DEFAULT_LAMPORTS_PER_BYTE_YEAR,
-};
+use anchor_lang::solana_program::rent::Rent;
 use anchor_lang::system_program::{create_account, CreateAccount};
 use anchor_spl::{
     token_2022::{
         initialize_mint2,
         spl_token_2022::{
-            extension::{
-                transfer_fee::TransferFeeConfig, BaseStateWithExtensions, ExtensionType,
-                StateWithExtensions,
-            },
+            extension::{transfer_fee::TransferFeeConfig, ExtensionType},
             pod::PodMint,
             state::Mint as MintState,
         },
@@ -28,13 +23,13 @@ pub struct InitializeToken2022<'info> {
     #[account(mut)]
     pub payer: Signer<'info>, // Paying for the account creation
     #[account(mut)]
-    pub mint_account: Signer<'info>, // Mint account need to sign for the creation
-    /// CHECK: The PDA that will be the mint authority
+    pub mint_account: Signer<'info>,
+    /// CHECK: The PDA that will be the mint authority for the new mint.
     #[account(
         seeds=[MINT_AUTHORITY_SEED],
         bump
     )]
-    pub mint_authority_pda: AccountInfo<'info>, // PDA as mint authority
+    pub mint_authority_pda: AccountInfo<'info>, // PDA whose key will be set as mint authority
 
     pub token_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
@@ -45,21 +40,38 @@ pub fn process_initialize(
     transfer_fee_basis_points: u16,
     maximum_fee: u64,
 ) -> Result<()> {
+    msg!("--- Instruction: InitializeToken2022 ---");
+    msg!(
+        "Input Parameter - Transfer Fee Basis Points: {}",
+        transfer_fee_basis_points
+    );
+    msg!("Input Parameter - Maximum Fee: {}", maximum_fee);
     msg!("Payer: {}", ctx.accounts.payer.key());
     msg!(
-        "Mint Account (to be created): {}",
+        "Mint Account address (to be created with keypair): {}",
         ctx.accounts.mint_account.key()
     );
     msg!(
-        "Passed Mint Authority PDA: {}",
+        "Provided Mint Authority PDA (to be set as authority): {}",
         ctx.accounts.mint_authority_pda.key()
     );
     msg!("Token Program: {}", ctx.accounts.token_program.key());
+    msg!("System Program: {}", ctx.accounts.system_program.key());
+
     let mint_size =
         ExtensionType::try_calculate_account_len::<PodMint>(&[ExtensionType::TransferFeeConfig])?;
+    msg!(
+        "Calculated Mint Account Size (with TransferFeeConfig extension): {}",
+        mint_size
+    );
 
-    let lamports = (Rent::get()?).minimum_balance(mint_size);
+    let lamports = Rent::get()?.minimum_balance(mint_size);
+    msg!(
+        "Calculated Minimum Lamports for Rent Exemption: {}",
+        lamports
+    );
 
+    msg!("Calling CPI: create_account (for mint)");
     create_account(
         CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
@@ -72,11 +84,26 @@ pub fn process_initialize(
         mint_size as u64,
         &ctx.accounts.token_program.key(),
     )?;
-    msg!("Mint account created.");
+    msg!(
+        "CPI successful: Mint account created at {}.",
+        ctx.accounts.mint_account.key()
+    );
 
     let transfer_fee_config_authority = Some(ctx.accounts.payer.key());
     let withdraw_withheld_authority = Some(ctx.accounts.payer.key());
+    msg!(
+        "Transfer Fee Config Authority (for this mint): {:?}",
+        transfer_fee_config_authority
+    );
+    msg!(
+        "Withdraw Withheld Authority (for this mint): {:?}",
+        withdraw_withheld_authority
+    );
 
+    msg!(
+        "Calling CPI: transfer_fee_initialize (for mint {})",
+        ctx.accounts.mint_account.key()
+    );
     transfer_fee_initialize(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -85,13 +112,30 @@ pub fn process_initialize(
                 mint: ctx.accounts.mint_account.to_account_info(),
             },
         ),
-        // Need to make this both a PDA later
         transfer_fee_config_authority.as_ref(),
         withdraw_withheld_authority.as_ref(),
         transfer_fee_basis_points,
         maximum_fee,
     )?;
-    msg!("Transfer fee extension initialized.");
+    msg!(
+        "CPI successful: Transfer fee extension initialized for mint {}.",
+        ctx.accounts.mint_account.key()
+    );
+
+    let decimals_to_set: u8 = 2;
+    msg!(
+        "Calling CPI: initialize_mint2 (for mint {})",
+        ctx.accounts.mint_account.key()
+    );
+    msg!("  Decimals to set: {}", decimals_to_set);
+    msg!(
+        "  Mint Authority to set: {}",
+        ctx.accounts.mint_authority_pda.key()
+    );
+    msg!(
+        "  Freeze Authority to set: {}",
+        ctx.accounts.mint_authority_pda.key()
+    );
 
     initialize_mint2(
         CpiContext::new(
@@ -100,14 +144,16 @@ pub fn process_initialize(
                 mint: ctx.accounts.mint_account.to_account_info(),
             },
         ),
-        2,
+        decimals_to_set,
         &ctx.accounts.mint_authority_pda.key(),
         Some(&ctx.accounts.mint_authority_pda.key()),
     )?;
     msg!(
-        "Mint initialized with PDA mint authority: {}",
+        "CPI successful: Mint {} initialized with mint authority {} and freeze authority {}.",
+        ctx.accounts.mint_account.key(),
+        ctx.accounts.mint_authority_pda.key(),
         ctx.accounts.mint_authority_pda.key()
     );
-
+    msg!("--- InitializeToken2022 finished ---");
     Ok(())
 }
