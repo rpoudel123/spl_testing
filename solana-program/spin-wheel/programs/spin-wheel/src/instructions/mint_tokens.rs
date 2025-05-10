@@ -1,11 +1,10 @@
+use crate::ErrorCode;
 use crate::MINT_AUTHORITY_SEED;
 use anchor_lang::prelude::*;
 use anchor_spl::{
     token_2022::mint_to as spl_mint_to,
     token_interface::{Mint, MintTo as SplMintToAccounts, Token2022, TokenAccount},
 };
-
-use crate::ErrorCode;
 
 #[derive(Accounts)]
 pub struct MintTokensToAccount<'info> {
@@ -26,65 +25,82 @@ pub struct MintTokensToAccount<'info> {
 }
 
 pub fn process_mint_tokens(ctx: Context<MintTokensToAccount>, amount: u64) -> Result<()> {
-    msg!("--- Instruction: MintTokensToAccount ---"); // Entry log
+    msg!("--- Instruction: MintTokensToAccount (Public Entry) ---");
+    msg!("--- MintTokensToAccount (Public Entry) finished ---");
+    Ok(())
+}
+
+pub fn internal_perform_mint<'info>(
+    mint_authority_pda_info: &AccountInfo<'info>,
+    mint_account_interface: &InterfaceAccount<'info, Mint>,
+    recipient_token_account_interface: &InterfaceAccount<'info, TokenAccount>,
+    token_program_interface: &Program<'info, Token2022>,
+    mint_authority_pda_bump: u8,
+    amount: u64,
+    expected_program_id_for_pda_check: &Pubkey,
+) -> Result<()> {
+    msg!("--- internal_perform_mint called ---");
     msg!("Amount to mint: {}", amount);
     msg!(
         "Recipient Token Account: {}",
-        ctx.accounts.recipient_token_account.key()
+        recipient_token_account_interface.key()
     );
     msg!(
         "Mint Account being minted from: {}",
-        ctx.accounts.mint_account.key()
+        mint_account_interface.key()
     );
     msg!(
-        "Mint Authority PDA (passed as AccountInfo): {}",
-        ctx.accounts.mint_authority_pda.key()
+        "Mint Authority PDA (AccountInfo): {}",
+        mint_authority_pda_info.key()
     );
-    msg!("Token Program: {}", ctx.accounts.token_program.key());
-
-    let bump_seed = ctx.bumps.mint_authority_pda;
-    msg!("Bump seed for mint_authority_pda: {}", bump_seed);
-
-    let pda_signer_seeds_set: &[&[u8]] = &[MINT_AUTHORITY_SEED, &[bump_seed]];
-    let all_signer_seeds = &[pda_signer_seeds_set][..];
+    msg!(
+        "Mint Authority PDA Bump being used: {}",
+        mint_authority_pda_bump
+    );
+    msg!(
+        "Expected Program ID for PDA check: {}",
+        expected_program_id_for_pda_check
+    );
 
     let (expected_pda, _expected_bump) =
-        Pubkey::find_program_address(&[MINT_AUTHORITY_SEED], ctx.program_id);
-    msg!("Expected PDA (derived in program): {}", expected_pda);
+        Pubkey::find_program_address(&[MINT_AUTHORITY_SEED], expected_program_id_for_pda_check);
 
-    if ctx.accounts.mint_authority_pda.key() != expected_pda {
+    if mint_authority_pda_info.key() != expected_pda {
         msg!(
-            "CRITICAL ERROR: PDA Mismatch! Passed mint_authority_pda: {}, Expected PDA: {}",
-            ctx.accounts.mint_authority_pda.key(),
+            "CRITICAL ERROR in internal_perform_mint: PDA Mismatch! Passed mint_authority_pda: {}, Expected PDA: {}",
+            mint_authority_pda_info.key(),
             expected_pda
         );
-        return err!(ErrorCode::BumpSeedNotInHashMap);
+        return err!(ErrorCode::InvalidMintAuthorityPDA);
     }
-    msg!("PDA check passed: Provided mint_authority_pda matches expected derivation.");
 
-    msg!("Preparing to call CPI: spl_mint_to");
-    msg!("  CPI Authority: {}", ctx.accounts.mint_authority_pda.key());
-    msg!("  CPI Mint: {}", ctx.accounts.mint_account.key());
+    msg!("PDA check passed for internal_perform_mint.");
+
+    let pda_signer_seeds_set: &[&[u8]] = &[MINT_AUTHORITY_SEED, &[mint_authority_pda_bump]];
+    let all_signer_seeds = &[pda_signer_seeds_set][..];
+
+    msg!("Preparing for SPL mint_to CPI in internal_perform_mint");
+    msg!("  CPI Authority: {}", mint_authority_pda_info.key());
+    msg!("  CPI Mint: {}", mint_account_interface.key());
     msg!(
         "  CPI To (Recipient ATA): {}",
-        ctx.accounts.recipient_token_account.key()
+        recipient_token_account_interface.key()
     );
     msg!("  CPI Amount: {}", amount);
 
     spl_mint_to(
         CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
+            token_program_interface.to_account_info(),
             SplMintToAccounts {
-                mint: ctx.accounts.mint_account.to_account_info(),
-                to: ctx.accounts.recipient_token_account.to_account_info(),
-                authority: ctx.accounts.mint_authority_pda.to_account_info(),
+                mint: mint_account_interface.to_account_info(),
+                to: recipient_token_account_interface.to_account_info(),
+                authority: mint_authority_pda_info.to_account_info(),
             },
             all_signer_seeds,
         ),
         amount,
     )?;
-
-    msg!("spl_mint_to CPI successful.");
-    msg!("--- MintTokensToAccount finished ---");
+    msg!("SPL mint_to CPI successful in internal_perform_mint.");
+    msg!("--- internal_perform_mint finished ---");
     Ok(())
 }

@@ -11,7 +11,9 @@ import {
 } from "@solana/spl-token";
 import type { SpinWheel } from "../target/types/spin_wheel";
 import { assert } from "chai";
+import { describe } from "node:test";
 
+const mintKeypair = new anchor.web3.Keypair();
 describe('spin-wheel token tests with PDA mint authority', () => {
   const provider = anchor.AnchorProvider.env();
   const connection = provider.connection;
@@ -20,7 +22,6 @@ describe('spin-wheel token tests with PDA mint authority', () => {
 
   const program = anchor.workspace.SpinWheel as Program<SpinWheel>;
 
-  const mintKeypair = new anchor.web3.Keypair();
   const recipientKeypair = new anchor.web3.Keypair(); // For user-to-user transfer tests
 
   // PDA for mint authority
@@ -213,7 +214,6 @@ describe('spin-wheel token tests with PDA mint authority', () => {
         authority: wallet.publicKey, // Payer is the withdraw authority
         mintAccount: mintKeypair.publicKey,
         tokenAccount: senderTokenAccountAddress,
-
         destinationTokenAccount: senderTokenAccountAddress, // Withdrawing to sender's ATA
         tokenProgram: TOKEN_2022_PROGRAM_ID,
       })
@@ -242,4 +242,84 @@ describe('spin-wheel token tests with PDA mint authority', () => {
     await confirmTx(transactionSignature);
     console.log('Updated transfer fee to zero.');
   });
+});
+
+
+describe('spin wheel game logic tests', () => {
+  const provider = anchor.AnchorProvider.env();
+  const connection = provider.connection;
+  const wallet = provider.wallet as anchor.Wallet;
+  anchor.setProvider(provider);
+
+  const program = anchor.workspace.SpinWheel as Program<SpinWheel>;
+  const cashinoMintPublicKey = mintKeypair.publicKey;
+
+  // GameState PDA
+  let gameStatePda: anchor.web3.PublicKey;
+  let gameStatePdaBump: number;
+
+  // House wallet for SOL game fees
+  const houseWalletKeypair = anchor.web3.Keypair.generate();
+
+  const confirmTx = async (txSignature: string) => {
+    const blockhash = await connection.getLatestBlockhash();
+    await connection.confirmTransaction({
+      signature: txSignature,
+      blockhash: blockhash.blockhash,
+      lastValidBlockHeight: blockhash.lastValidBlockHeight
+    }, 'confirmed');
+    console.log(`Transaction ${txSignature} confirmed.`);
+  };
+
+  before(async () => {
+    [gameStatePda, gameStatePdaBump] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("game_state")],
+      program.programId
+    );
+    console.log(`GameState PDA: ${gameStatePda.toBase58()}`);
+
+    console.log(`Using $CASHINO Mint for tests: ${cashinoMintPublicKey.toBase58()}`);
+    console.log(`House wallet for tests: ${houseWalletKeypair.publicKey.toBase58()}`);
+  });
+
+
+  it("Initializes Game Settings", async () => {
+    const initialHouseFeeBasisPoints = new BN(10);
+
+    console.log(`Test: Initializing GameState at PDA: ${gameStatePda.toBase58()}`);
+    console.log(`Test: Authority (Payer): ${wallet.publicKey.toBase58()}`);
+    console.log(`Test: House Wallet to be set: ${houseWalletKeypair.publicKey.toBase58()}`);
+    console.log(`Test: House Fee Basis Points to set: ${initialHouseFeeBasisPoints.toString()}`);
+    console.log(`Test: $CASHINO Mint to set: ${cashinoMintPublicKey.toBase58()}`);
+
+    const transactionSignature = await program.methods
+      .initializeGameSettings(initialHouseFeeBasisPoints, cashinoMintPublicKey)
+      .accounts({
+        authority: wallet.publicKey,
+        gameState: gameStatePda,
+        houseWallet: houseWalletKeypair.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ skipPreflight: true, commitment: "confirmed" });
+
+    await confirmTx(transactionSignature);
+    console.log("Transaction for initializeGameSettings confirmed by client.");
+
+    const gameStateAccount = await program.account.gameState.fetch(gameStatePda);
+    console.log("Fetched GameState Account:", gameStateAccount);
+
+    assert.isTrue(gameStateAccount.authority.equals(wallet.publicKey), "GameState authority mismatch");
+    assert.isTrue(gameStateAccount.houseWallet.equals(houseWalletKeypair.publicKey), "GameState houseWallet mismatch");
+    assert.strictEqual(gameStateAccount.houseFeeBasisPoints, initialHouseFeeBasisPoints.toNumber(), "GameState houseFeeBasisPoints mismatch");
+    assert.isTrue(gameStateAccount.cashinoMint.equals(cashinoMintPublicKey), "GameState cashinoMint mismatch");
+    assert.strictEqual(gameStateAccount.isInitialized, true, "GameState should be initialized");
+    assert.strictEqual(gameStateAccount.roundCounter.toNumber(), 0, "GameState roundCounter should be 0");
+
+    console.log("GameState initialized and verified successfully.");
+
+
+
+  });
+
+
 });
