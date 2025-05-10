@@ -26,6 +26,15 @@ pub struct MintTokensToAccount<'info> {
 
 pub fn process_mint_tokens(ctx: Context<MintTokensToAccount>, amount: u64) -> Result<()> {
     msg!("--- Instruction: MintTokensToAccount (Public Entry) ---");
+    internal_perform_mint(
+        &ctx.accounts.mint_authority_pda,
+        &ctx.accounts.mint_account,
+        &ctx.accounts.recipient_token_account,
+        &ctx.accounts.token_program,
+        ctx.bumps.mint_authority_pda,
+        amount,
+        ctx.program_id,
+    )?;
     msg!("--- MintTokensToAccount (Public Entry) finished ---");
     Ok(())
 }
