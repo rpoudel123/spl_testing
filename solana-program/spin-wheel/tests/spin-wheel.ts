@@ -246,79 +246,160 @@ describe('spin-wheel token tests with PDA mint authority', () => {
 });
 
 
-// describe('spin wheel game logic tests', () => {
-//   const provider = anchor.AnchorProvider.env();
-//   const connection = provider.connection;
-//   const wallet = provider.wallet as anchor.Wallet;
-//   anchor.setProvider(provider);
-//
-//   const program = anchor.workspace.SpinWheel as Program<SpinWheel>;
-//   const cashinoMintPublicKey = mintKeypair.publicKey;
-//
-//   // GameState PDA
-//   let gameStatePda: anchor.web3.PublicKey;
-//   let gameStatePdaBump: number;
-//
-//   // House wallet for SOL game fees
-//   const houseWalletKeypair = anchor.web3.Keypair.generate();
-//
-//   const confirmTx = async (txSignature: string) => {
-//     const blockhash = await connection.getLatestBlockhash();
-//     await connection.confirmTransaction({
-//       signature: txSignature,
-//       blockhash: blockhash.blockhash,
-//       lastValidBlockHeight: blockhash.lastValidBlockHeight
-//     }, 'confirmed');
-//     console.log(`Transaction ${txSignature} confirmed.`);
-//   };
-//
-//   before(async () => {
-//     [gameStatePda, gameStatePdaBump] = anchor.web3.PublicKey.findProgramAddressSync(
-//       [Buffer.from("game_state")],
-//       program.programId
-//     );
-//     console.log(`GameState PDA: ${gameStatePda.toBase58()}`);
-//
-//     console.log(`Using $CASHINO Mint for tests: ${cashinoMintPublicKey.toBase58()}`);
-//     console.log(`House wallet for tests: ${houseWalletKeypair.publicKey.toBase58()}`);
-//   });
-//
-//
-//   it("Initializes Game Settings", async () => {
-//     const initialHouseFeeBasisPoints = new BN(10);
-//
-//     console.log(`Test: Initializing GameState at PDA: ${gameStatePda.toBase58()}`);
-//     console.log(`Test: Authority (Payer): ${wallet.publicKey.toBase58()}`);
-//     console.log(`Test: House Wallet to be set: ${houseWalletKeypair.publicKey.toBase58()}`);
-//     console.log(`Test: House Fee Basis Points to set: ${initialHouseFeeBasisPoints.toString()}`);
-//     console.log(`Test: $CASHINO Mint to set: ${cashinoMintPublicKey.toBase58()}`);
-//
-//     const transactionSignature = await program.methods
-//       .initializeGameSettings(initialHouseFeeBasisPoints, cashinoMintPublicKey)
-//       .accounts({
-//         authority: wallet.publicKey,
-//         gameState: gameStatePda,
-//         houseWallet: houseWalletKeypair.publicKey,
-//         systemProgram: SystemProgram.programId,
-//       })
-//       .rpc({ skipPreflight: true, commitment: "confirmed" });
-//
-//     await confirmTx(transactionSignature);
-//     console.log("Transaction for initializeGameSettings confirmed by client.");
-//
-//     const gameStateAccount = await program.account.gameState.fetch(gameStatePda);
-//     console.log("Fetched GameState Account:", gameStateAccount);
-//
-//     assert.isTrue(gameStateAccount.authority.equals(wallet.publicKey), "GameState authority mismatch");
-//     assert.isTrue(gameStateAccount.houseWallet.equals(houseWalletKeypair.publicKey), "GameState houseWallet mismatch");
-//     assert.strictEqual(gameStateAccount.houseFeeBasisPoints, initialHouseFeeBasisPoints.toNumber(), "GameState houseFeeBasisPoints mismatch");
-//     assert.isTrue(gameStateAccount.cashinoMint.equals(cashinoMintPublicKey), "GameState cashinoMint mismatch");
-//     assert.strictEqual(gameStateAccount.isInitialized, true, "GameState should be initialized");
-//     assert.strictEqual(gameStateAccount.roundCounter.toNumber(), 0, "GameState roundCounter should be 0");
-//
-//     console.log("GameState initialized and verified successfully.");
-//
-//   });
-//
-//
-// });
+describe('spin wheel game logic tests', () => {
+  const provider = anchor.AnchorProvider.env();
+  const connection = provider.connection;
+  const wallet = provider.wallet as anchor.Wallet;
+  anchor.setProvider(provider);
+
+  const program = anchor.workspace.SpinWheel as Program<SpinWheel>;
+  const cashinoMintPublicKey = mintKeypair.publicKey;
+
+  // GameState PDA
+  let gameStatePda: anchor.web3.PublicKey;
+  let gameStatePdaBump: number;
+
+  // House wallet for SOL game fees
+  const houseWalletKeypair = anchor.web3.Keypair.generate();
+
+  const confirmTx = async (txSignature: string) => {
+    const blockhash = await connection.getLatestBlockhash();
+    await connection.confirmTransaction({
+      signature: txSignature,
+      blockhash: blockhash.blockhash,
+      lastValidBlockHeight: blockhash.lastValidBlockHeight
+    }, 'confirmed');
+    console.log(`Transaction ${txSignature} confirmed.`);
+  };
+
+  before(async () => {
+    [gameStatePda, gameStatePdaBump] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("game_state")],
+      program.programId
+    );
+    console.log(`GameState PDA: ${gameStatePda.toBase58()}`);
+
+    console.log(`Using $CASHINO Mint for tests: ${cashinoMintPublicKey.toBase58()}`);
+    console.log(`House wallet for tests: ${houseWalletKeypair.publicKey.toBase58()}`);
+  });
+
+
+  it("Initializes Game Settings", async () => {
+    const initialHouseFeeBasisPoints = new BN(10);
+
+    console.log(`Test: Initializing GameState at PDA: ${gameStatePda.toBase58()}`);
+    console.log(`Test: Authority (Payer): ${wallet.publicKey.toBase58()}`);
+    console.log(`Test: House Wallet to be set: ${houseWalletKeypair.publicKey.toBase58()}`);
+    console.log(`Test: House Fee Basis Points to set: ${initialHouseFeeBasisPoints.toString()}`);
+    console.log(`Test: $CASHINO Mint to set: ${cashinoMintPublicKey.toBase58()}`);
+
+    const transactionSignature = await program.methods
+      .initializeGameSettings(initialHouseFeeBasisPoints, cashinoMintPublicKey)
+      .accounts({
+        authority: wallet.publicKey,
+        gameState: gameStatePda,
+        houseWallet: houseWalletKeypair.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc({ skipPreflight: true, commitment: "confirmed" });
+
+    await confirmTx(transactionSignature);
+    console.log("Transaction for initializeGameSettings confirmed by client.");
+
+    const gameStateAccount = await program.account.gameState.fetch(gameStatePda);
+    console.log("Fetched GameState Account:", gameStateAccount);
+
+    assert.isTrue(gameStateAccount.authority.equals(wallet.publicKey), "GameState authority mismatch");
+    assert.isTrue(gameStateAccount.houseWallet.equals(houseWalletKeypair.publicKey), "GameState houseWallet mismatch");
+    assert.strictEqual(gameStateAccount.houseFeeBasisPoints, initialHouseFeeBasisPoints.toNumber(), "GameState houseFeeBasisPoints mismatch");
+    assert.isTrue(gameStateAccount.cashinoMint.equals(cashinoMintPublicKey), "GameState cashinoMint mismatch");
+    assert.strictEqual(gameStateAccount.isInitialized, true, "GameState should be initialized");
+    assert.strictEqual(gameStateAccount.roundCounter.toNumber(), 0, "GameState roundCounter should be 0");
+
+    console.log("GameState initialized and verified successfully.");
+
+  });
+
+  let currentRoundIdForSeed: anchor.BN;
+  let roundStatePda: anchor.web3.PublicKey;
+  let gamePotSolPda: anchor.web3.PublicKey;
+
+  it("Starts a new game round correctly", async () => {
+    const gameStateAccountBefore = await program.account.gameState.fetch(gameStatePda);
+    currentRoundIdForSeed = gameStateAccountBefore.roundCounter;
+    console.log(`Test: Current roundCounter from GameState (for PDA seed): ${currentRoundIdForSeed.toString()}`);
+
+    [roundStatePda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("round_state"), currentRoundIdForSeed.toBuffer("le", 8)],
+      program.programId
+    );
+    [gamePotSolPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("sol_pot"), currentRoundIdForSeed.toBuffer("le", 8)],
+      program.programId
+    );
+
+    console.log(`Test: Derived RoundState PDA for new round: ${roundStatePda.toBase58()}`);
+    console.log(`Test: Derived GamePotSol PDA for new round: ${gamePotSolPda.toBase58()}`);
+
+    const seedCommitment = Array.from(Buffer.from("test_seed_commitment_for_round_X".padEnd(32, '\0')));
+    const roundDuration = new BN(60);
+
+    console.log(`Test: Calling startNewRound with roundIdForSeed: ${currentRoundIdForSeed.toString()}`);
+
+    const transactionSignature = await program.methods
+      .startNewRound(
+        seedCommitment,
+        roundDuration,
+        currentRoundIdForSeed
+      )
+      .accounts({
+        authority: wallet.publicKey,
+        gameState: gameStatePda,
+        roundState: roundStatePda,
+        gamePot: gamePotSolPda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc({ skipPreflight: true, commitment: "confirmed" });
+
+    await confirmTx(transactionSignature);
+    console.log("Transaction for startNewRound confirmed.");
+
+    const gameStateAccountAfter = await program.account.gameState.fetch(gameStatePda);
+    const expectedNewRoundCounter = currentRoundIdForSeed.add(new BN(1));
+    console.log(`Test: GameState roundCounter after: ${gameStateAccountAfter.roundCounter.toString()}, Expected: ${expectedNewRoundCounter.toString()}`);
+    assert.strictEqual(
+      gameStateAccountAfter.roundCounter.toString(),
+      expectedNewRoundCounter.toString(),
+      "GameState roundCounter should be incremented"
+    );
+
+    const roundStateAccount = await program.account.roundState.fetch(roundStatePda);
+    console.log("Fetched RoundState Account:", {
+      id: roundStateAccount.id.toString(),
+      isActive: roundStateAccount.isActive,
+      totalSolPot: roundStateAccount.totalSolPot.toString(),
+      playerCount: roundStateAccount.playerCount,
+      startTime: roundStateAccount.startTime.toString(),
+      endTime: roundStateAccount.endTime.toString(),
+    });
+    assert.strictEqual(
+      roundStateAccount.id.toString(),
+      expectedNewRoundCounter.toString(),
+      "RoundState ID should match new game counter"
+    );
+    assert.isTrue(roundStateAccount.isActive, "RoundState should be active");
+    assert.deepStrictEqual(roundStateAccount.seedCommitment, seedCommitment, "Seed commitment mismatch");
+    assert.strictEqual(roundStateAccount.totalSolPot.toNumber(), 0, "RoundState totalSolPot should be 0");
+    assert.strictEqual(roundStateAccount.playerCount, 0, "RoundState playerCount should be 0");
+    assert.isTrue(roundStateAccount.startTime.toNumber() > 0, "RoundState start time should be set");
+    assert.isTrue(roundStateAccount.endTime.toNumber() > roundStateAccount.startTime.toNumber(), "RoundState end time should be after start time");
+
+    const gamePotAccount = await program.account.gamePotSol.fetch(gamePotSolPda);
+    assert.isNotNull(gamePotAccount, "GamePotSol account should be created");
+    console.log(`GamePotSol account ${gamePotSolPda.toBase58()} created successfully.`);
+    console.log("startNewRound test completed successfully.");
+
+
+  });
+
+});

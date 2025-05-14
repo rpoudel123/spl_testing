@@ -25,11 +25,19 @@ pub struct StartNewRound<'info> {
         init,
         payer = authority,
         space = 8 + std::mem::size_of::<RoundState>(),
-        seeds = [b"round_state".as_ref(), &round_id_for_seed.to_le_bytes()], // Use the passed-in round_id_for_seed
+        seeds = [b"round_state".as_ref(), &round_id_for_seed.to_le_bytes().as_ref()],
         bump
     )]
-    pub round_state: Account<'info, RoundState>,
+    pub round_state: Box<Account<'info, RoundState>>,
     pub system_program: Program<'info, System>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = 8,
+        seeds = [b"sol_pot".as_ref(), &round_id_for_seed.to_le_bytes().as_ref()],
+        bump
+    )]
     pub game_pot: Account<'info, GamePotSol>,
 }
 
