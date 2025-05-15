@@ -237,10 +237,29 @@ pub mod spin_wheel {
 
     pub fn end_round(
         ctx: Context<EndGameRound>,
+        revealed_seed: Vec<u8>,
         round_id_for_pdas: u64,
-        revealed_seed: SeedArray,
     ) -> Result<()> {
-        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed)
+        msg!("NEW_ORDER_REVEALED_SEED_VEC: {:?}", revealed_seed); // Log the Vec
+        msg!("NEW_ORDER_ROUND_ID_FOR_PDA: {:?}", round_id_for_pdas);
+
+        // Convert Vec<u8> to SeedArray [u8; 32] for your logic
+        if revealed_seed.len() != SEED_BYTES_LENGTH {
+            // Or handle as an error appropriate to your logic
+            msg!("Error: revealed_seed length is not {}", SEED_BYTES_LENGTH);
+            return err!(ErrorCode::InvalidRevealedSeed); // Or a new error code
+        }
+        let mut revealed_seed_array: SeedArray = [0u8; SEED_BYTES_LENGTH];
+        revealed_seed_array.copy_from_slice(&revealed_seed[..SEED_BYTES_LENGTH]);
+        
+        let round_state = &ctx.accounts.round_state; // Assuming EndGameRound context has round_state
+        require!(revealed_seed_array == round_state.seed_commitment, ErrorCode::InvalidRevealedSeed);
+        msg!("Revealed seed (from vec) matches commitment.");
+        
+        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed_array); // original call order in process func may need update
+
+        Ok(())
+        // instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed)
     }
 
     pub fn claim_sol_winnings(ctx: Context<ClaimSolWinnings>, round_id_for_pdas: u64) -> Result<()> {

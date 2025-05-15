@@ -4,7 +4,7 @@ use crate::{
 };
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
-    clock::Clock, hash::hash, program::invoke_signed, system_instruction,
+    clock::Clock, hash::hash,
 };
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -86,14 +86,14 @@ fn determine_winner(round_state: &RoundState, current_timestamp: i64) -> Result<
 
 
 #[derive(Accounts)]
-#[instruction(round_id_for_pdas: u64, revealed_seed: SeedArray)]
+#[instruction(revealed_seed: Vec<u8>, round_id_for_pdas: u64)]
 pub struct EndGameRound<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
     #[account(
         mut, 
-        seeds = [b"game_state"], 
+        seeds = [b"game_state"],
         bump,
         constraint = game_state.authority == authority.key() @ ErrorCode::UnauthorizedAccess,
         constraint = game_state.is_initialized @ ErrorCode::UnauthorizedAccess
@@ -231,29 +231,27 @@ pub fn process_end_game_round(
     if house_sol_fee_amount > 0 {
         msg!("Attempting to transfer $SOL house fee {} from GamePotSol {} to HouseWallet {}",
             house_sol_fee_amount, ctx.accounts.game_pot_sol.key(), ctx.accounts.house_wallet.key());
+        let game_pot_account_info = ctx.accounts.game_pot_sol.to_account_info();
+        let house_wallet_account_info = ctx.accounts.house_wallet.to_account_info();
+        
+        let game_pot_lamports_initial = game_pot_account_info.lamports();
+        let rent_for_game_pot = Rent::get()?.minimum_balance(game_pot_account_info.data_len());
 
-        let game_pot_bump = ctx.bumps.game_pot_sol;
-        let game_pot_seeds_for_cpi: &[&[u8]] = &[
-            b"sol_pot".as_ref(),
-            &round_id_for_pdas.to_le_bytes(),
-            &[game_pot_bump],
-        ];
-        let all_game_pot_signer_seeds = &[game_pot_seeds_for_cpi][..];
+        if game_pot_lamports_initial < rent_for_game_pot {
+            msg!("Error: GamePotSol has {} lamports, which is less than rent minimum {}", game_pot_lamports_initial, rent_for_game_pot);
+            return err!(ErrorCode::InsufficientFunds);
+        }
+        let transferable_lamports = game_pot_lamports_initial.checked_sub(rent_for_game_pot).ok_or(ErrorCode::InsufficientFunds)?;
 
-        invoke_signed(
-            &system_instruction::transfer(
-                &ctx.accounts.game_pot_sol.key(),
-                &ctx.accounts.house_wallet.key(),
-                house_sol_fee_amount,
-            ),
-            &[
-                ctx.accounts.game_pot_sol.to_account_info(),
-                ctx.accounts.house_wallet.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            all_game_pot_signer_seeds,
-        )?;
-        msg!("$SOL House Fee transferred successfully.");
+        if transferable_lamports < house_sol_fee_amount {
+            msg!("Error: GamePotSol has insufficient transferable SOL ({} available) to pay house fee {}",
+                transferable_lamports, house_sol_fee_amount);
+            return err!(ErrorCode::InsufficientFunds);
+        }
+        
+        **game_pot_account_info.try_borrow_mut_lamports()? -= house_sol_fee_amount;
+        **house_wallet_account_info.try_borrow_mut_lamports()? += house_sol_fee_amount;
+        msg!("$SOL House Fee of {} lamports transferred successfully directly.", house_sol_fee_amount);
     } else {
         msg!("$SOL House Fee is 0, no transfer needed.");
     }

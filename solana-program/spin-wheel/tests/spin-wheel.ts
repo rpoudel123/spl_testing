@@ -523,6 +523,8 @@ describe('spin wheel game logic tests', () => {
 
         const originalSeedString = "test_seed_commitment_for_round_X".padEnd(32, '\0');
         const seedBufferForReveal = Buffer.from(originalSeedString);
+        const seedCommitment = Array.from(Buffer.from("test_seed_commitment_for_round_X".padEnd(32, '\0')));
+        const seedCommitmentBuffer = Buffer.from(seedCommitment);
         const hashOfSeed = crypto.createHash('sha256').update(seedBufferForReveal).digest();
         const seedCommitmentForInstruction = Array.from(hashOfSeed);
 
@@ -535,8 +537,7 @@ describe('spin wheel game logic tests', () => {
         );
 
         console.log("CLIENT TEST (endRound): originalSeedStringForReveal:", originalSeedString);
-        console.log("CLIENT TEST (endRound): seedBufferForReveal (first 5):", seedBufferForReveal.slice(0, 5));
-
+        console.log("CLIENT TEST (endRound): seedBufferForReveal (first 5):", Array.from(seedBufferForReveal));
 
         roundCashinoRewardsPotAta = getAssociatedTokenAddressSync(
             mintKeypair.publicKey,
@@ -557,8 +558,10 @@ describe('spin wheel game logic tests', () => {
         console.log(`Test: Initial GamePotSol Balance: ${initialGamePotSolBalance.toString()}`);
         console.log(`Test: Total SOL in Pot (from RoundState): ${totalSolPotBeforeEnd.toString()}`);
 
-        const transactionSignature = await program.methods
-            .endRound(currentRoundIdForSeed, revealedSeedArray)
+        console.log("THE REVEALED SEED BEING SENT: ", revealedSeedArray);
+
+        const endRoundIx = await program.methods
+            .endRound(seedBufferForReveal, currentRoundIdForSeed)
             .accounts({
                 authority: wallet.publicKey,
                 gameState: gameStatePda,
@@ -574,9 +577,56 @@ describe('spin wheel game logic tests', () => {
                 associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
                 spinWheelProgram: program.programId,
             })
-            .rpc({ skipPreflight: true, commitment: "confirmed" });
+            .instruction();
 
-        await confirmTx(transactionSignature);
+        const transaction = new anchor.web3.Transaction();
+
+        transaction.add(
+            anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
+                units: 400000,
+            })
+        );
+
+        transaction.add(endRoundIx);
+
+        let txSignature: string | undefined = undefined;
+        try {
+            txSignature = await provider.sendAndConfirm(transaction, [wallet.payer], {
+                skipPreflight: true,
+                commitment: "confirmed",
+            });
+            console.log(`Transaction ${txSignature} confirmed.`);
+            console.log("Transaction for endGameRound confirmed by client.");
+
+        } catch (error) {
+            console.error("Error sending/confirming transaction:", error);
+            if (txSignature) {
+                console.log(`Failed tx: ${txSignature}. Check explorer or solana confirm -v ${txSignature}`);
+            }
+            throw error;
+        }
+
+
+        // const transactionSignature = await program.methods
+        //     .endRound(seedBufferForReveal, currentRoundIdForSeed)
+        //     .accounts({
+        //         authority: wallet.publicKey,
+        //         gameState: gameStatePda,
+        //         roundState: roundStatePda,
+        //         gamePotSol: gamePotSolPda,
+        //         houseWallet: houseWalletKeypair.publicKey,
+        //         cashinoTokenMint: mintKeypair.publicKey,
+        //         cashinoMintAuthorityPda: mintAuthorityPda,
+        //         roundCashinoRewardsPotAccount: roundCashinoRewardsPotAccountPda,
+        //         roundCashinoRewardsPotAta: roundCashinoRewardsPotAta,
+        //         systemProgram: anchor.web3.SystemProgram.programId,
+        //         tokenProgram: TOKEN_2022_PROGRAM_ID,
+        //         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        //         spinWheelProgram: program.programId,
+        //     })
+        //     .rpc({ skipPreflight: true, commitment: "confirmed" });
+        //
+        // await confirmTx(transactionSignature);
         console.log("Transaction for endGameRound confirmed.");
 
         const gameStateAfter = await program.account.gameState.fetch(gameStatePda);
@@ -596,7 +646,7 @@ describe('spin wheel game logic tests', () => {
         console.log(`Test: Final House Wallet Balance: ${finalHouseWalletBalance.toString()}`);
         assert.strictEqual(
             finalHouseWalletBalance.toString(),
-            initialHouseWalletBalance.add(BigInt(expectedHouseFee.toString())).toString(),
+            (initialHouseWalletBalance + BigInt(expectedHouseFee.toString())).toString(),
             "House wallet balance did not increase by correct fee amount"
         );
 
@@ -605,7 +655,7 @@ describe('spin wheel game logic tests', () => {
         console.log(`Test: Final GamePotSol Balance: ${finalGamePotSolBalance}, Expected after fee: ${expectedGamePotSolBalanceAfterFee}`);
         assert.strictEqual(finalGamePotSolBalance, expectedGamePotSolBalanceAfterFee, "GamePotSol balance after fee mismatch");
 
-        const roundCashinoRewardsPotAccountData = await program.account.roundCashinoRewardsPotAccount.fetch(roundCashinoRewardsPotAccountPda);
+        const roundCashinoRewardsPotAccountData = await program.account.roundCashinoRewardsPot.fetch(roundCashinoRewardsPotAccountPda);
         assert.strictEqual(roundCashinoRewardsPotAccountData.roundId.toString(), currentRoundIdForSeed.toString(), "RoundCashinoRewardsPot roundId mismatch");
         assert.strictEqual(roundCashinoRewardsPotAccountData.totalMintedForRound.toString(), CASHINO_REWARD_PER_ROUND_UNITS_TS.toString(), "RoundCashinoRewardsPot totalMinted mismatch");
 
