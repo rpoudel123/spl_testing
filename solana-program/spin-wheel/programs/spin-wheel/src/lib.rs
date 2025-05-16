@@ -210,13 +210,8 @@ pub mod spin_wheel {
     pub fn initialize_game_settings(
         ctx: Context<InitializeGameSettings>,
         house_fee_basis_points: u16,
-        cashino_mint_address: Pubkey,
     ) -> Result<()> {
-        instructions::game_initialize::process_initialize_game_settings(
-            ctx,
-            house_fee_basis_points,
-            cashino_mint_address,
-        )
+        instructions::game_initialize::process_initialize_game_settings(ctx, house_fee_basis_points)
     }
 
     pub fn start_new_round(
@@ -243,35 +238,34 @@ pub mod spin_wheel {
 
     pub fn end_round(
         ctx: Context<EndGameRound>,
-        revealed_seed: Vec<u8>,
+        revealed_seed: SeedArray,
         round_id_for_pdas: u64,
     ) -> Result<()> {
         msg!("NEW_ORDER_REVEALED_SEED_VEC: {:?}", revealed_seed); // Log the Vec
         msg!("NEW_ORDER_ROUND_ID_FOR_PDA: {:?}", round_id_for_pdas);
 
-        // Convert Vec<u8> to SeedArray [u8; 32] for your logic
-        if revealed_seed.len() != SEED_BYTES_LENGTH {
-            // Or handle as an error appropriate to your logic
-            msg!("Error: revealed_seed length is not {}", SEED_BYTES_LENGTH);
-            return err!(ErrorCode::InvalidRevealedSeed); // Or a new error code
-        }
-        let mut revealed_seed_array: SeedArray = [0u8; SEED_BYTES_LENGTH];
-        revealed_seed_array.copy_from_slice(&revealed_seed[..SEED_BYTES_LENGTH]);
+        let round_state = &ctx.accounts.round_state;
+        require!(
+            revealed_seed == round_state.seed_commitment,
+            ErrorCode::InvalidRevealedSeed
+        );
 
-        let round_state = &ctx.accounts.round_state; // Assuming EndGameRound context has round_state
-        require!(revealed_seed_array == round_state.seed_commitment, ErrorCode::InvalidRevealedSeed);
-        msg!("Revealed seed (from vec) matches commitment.");
+        msg!("Revealed seed (from SeedArray arg) matches commitment.");
 
-        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed_array);
-
-        Ok(())
+        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed)
     }
 
-    pub fn claim_sol_winnings(ctx: Context<ClaimSolWinnings>, round_id_for_pdas: u64) -> Result<()> {
+    pub fn claim_sol_winnings(
+        ctx: Context<ClaimSolWinnings>,
+        round_id_for_pdas: u64,
+    ) -> Result<()> {
         instructions::claim_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
     }
 
-    pub fn claim_cashino_rewards(ctx: Context<ClaimCashinoRewards>, round_id_for_pdas: u64) -> Result<()>{
+    pub fn claim_cashino_rewards(
+        ctx: Context<ClaimCashinoRewards>,
+        round_id_for_pdas: u64,
+    ) -> Result<()> {
         instructions::claim_cashino_rewards::process_claim_cashino_rewards(ctx, round_id_for_pdas)
     }
 
@@ -282,5 +276,4 @@ pub mod spin_wheel {
     pub fn update_game_house_wallet(ctx: Context<UpdateGameHouseWallet>) -> Result<()> {
         instructions::game_admin::process_update_game_house_wallet(ctx)
     }
-
 }

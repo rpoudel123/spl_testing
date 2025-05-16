@@ -86,7 +86,7 @@ fn determine_winner(round_state: &RoundState, current_timestamp: i64) -> Result<
 
 
 #[derive(Accounts)]
-#[instruction(revealed_seed: Vec<u8>, round_id_for_pdas: u64)]
+#[instruction(revealed_seed: SeedArray, round_id_for_pdas: u64)]
 pub struct EndGameRound<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -98,7 +98,7 @@ pub struct EndGameRound<'info> {
         constraint = game_state.authority == authority.key() @ ErrorCode::UnauthorizedAccess,
         constraint = game_state.is_initialized @ ErrorCode::UnauthorizedAccess
     )]
-    pub game_state: Account<'info, GameState>,
+    pub game_state: Box<Account<'info, GameState>>,
 
     #[account(
         mut, 
@@ -106,14 +106,14 @@ pub struct EndGameRound<'info> {
         bump,
         constraint = round_state.is_active @ ErrorCode::RoundNotActive,
     )]
-    pub round_state: Account<'info, RoundState>,
+    pub round_state: Box<Account<'info, RoundState>>,
 
     #[account(
         mut, 
         seeds = [b"sol_pot".as_ref(), &round_id_for_pdas.to_le_bytes()],
         bump
     )]
-    pub game_pot_sol: Account<'info, GamePotSol>,
+    pub game_pot_sol: Box<Account<'info, GamePotSol>>,
 
     /// CHECK: This is the house_wallet address stored in game_state.
     /// It will receive the SOL house fee. Marked as mut because it receives lamports.
@@ -124,7 +124,7 @@ pub struct EndGameRound<'info> {
         mut, 
         address = game_state.cashino_mint @ ErrorCode::InvalidMintAccount
     )]
-    pub cashino_token_mint: InterfaceAccount<'info, Mint>,
+    pub cashino_token_mint: Box<InterfaceAccount<'info, Mint>>,
 
     /// CHECK: This is the PDA derived from MINT_AUTHORITY_SEED.
     /// It's the authority for the cashino_token_mint.
@@ -141,7 +141,7 @@ pub struct EndGameRound<'info> {
         seeds = [b"cashino_round_pot".as_ref(), &round_id_for_pdas.to_le_bytes()],
         bump
     )]
-    pub round_cashino_rewards_pot_account: Account<'info, RoundCashinoRewardsPot>,
+    pub round_cashino_rewards_pot_account: Box<Account<'info, RoundCashinoRewardsPot>>,
 
     #[account(
         init_if_needed, 
@@ -149,7 +149,7 @@ pub struct EndGameRound<'info> {
         associated_token::mint = cashino_token_mint,
         associated_token::authority = round_cashino_rewards_pot_account,
     )]
-    pub round_cashino_rewards_pot_ata: InterfaceAccount<'info, TokenAccount>,
+    pub round_cashino_rewards_pot_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token2022>,

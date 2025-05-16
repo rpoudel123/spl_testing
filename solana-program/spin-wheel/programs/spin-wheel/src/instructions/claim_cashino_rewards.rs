@@ -17,7 +17,7 @@ pub struct ClaimCashinoRewards<'info> {
         seeds = [b"game_state"],
         bump
     )]
-    pub game_state: Account<'info, GameState>,
+    pub game_state: Box<Account<'info, GameState>>,
 
     #[account(
         mut,
@@ -25,7 +25,7 @@ pub struct ClaimCashinoRewards<'info> {
         bump,
         constraint = !round_state.is_active @ ErrorCode::RoundStillActive,
     )]
-    pub round_state: Account<'info, RoundState>,
+    pub round_state: Box<Account<'info, RoundState>>,
 
     #[account(
         seeds = [b"cashino_round_pot".as_ref(), &round_id_for_pdas.to_le_bytes()],
@@ -39,12 +39,12 @@ pub struct ClaimCashinoRewards<'info> {
         associated_token::mint = cashino_token_mint,
         associated_token::authority = round_cashino_rewards_pot_account,
     )]
-    pub round_cashino_rewards_pot_ata: InterfaceAccount<'info, TokenAccount>,
+    pub round_cashino_rewards_pot_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         address = game_state.cashino_mint @ ErrorCode::InvalidMintAccount
     )]
-    pub cashino_token_mint: InterfaceAccount<'info, Mint>,
+    pub cashino_token_mint: Box<InterfaceAccount<'info, Mint>>,
 
     #[account(
         init_if_needed,
@@ -52,7 +52,7 @@ pub struct ClaimCashinoRewards<'info> {
         associated_token::mint = cashino_token_mint,
         associated_token::authority = player,
     )]
-    pub player_cashino_ata: InterfaceAccount<'info, TokenAccount>,
+    pub player_cashino_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     // Programs
     pub token_program: Program<'info, Token2022>,

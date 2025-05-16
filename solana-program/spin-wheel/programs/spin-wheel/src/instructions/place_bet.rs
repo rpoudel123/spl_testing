@@ -30,7 +30,7 @@ pub struct PlaceSolBet<'info> {
         bump,
         constraint = round_state.is_active @ ErrorCode::RoundNotActive,
     )]
-    pub round_state: Account<'info, RoundState>,
+    pub round_state: Box<Account<'info, RoundState>>,
 
     #[account(
         mut, // It will receive SOL
