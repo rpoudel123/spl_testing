@@ -61,6 +61,12 @@ pub enum ErrorCode {
     RoundStillActive,
     #[msg("Winner not yet determined for this round.")]
     WinnerNotDetermined,
+    #[msg("Reward already claimed")]
+    RewardAlreadyClaimed,
+    #[msg("Not Eligible for rewards")]
+    NotEligibleForReward,
+    #[msg("Invalid game state")]
+    InvalidGameState,
 }
 
 pub const MINT_AUTHORITY_SEED: &[u8] = b"mint_authority";
@@ -251,19 +257,22 @@ pub mod spin_wheel {
         }
         let mut revealed_seed_array: SeedArray = [0u8; SEED_BYTES_LENGTH];
         revealed_seed_array.copy_from_slice(&revealed_seed[..SEED_BYTES_LENGTH]);
-        
+
         let round_state = &ctx.accounts.round_state; // Assuming EndGameRound context has round_state
         require!(revealed_seed_array == round_state.seed_commitment, ErrorCode::InvalidRevealedSeed);
         msg!("Revealed seed (from vec) matches commitment.");
-        
-        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed_array); // original call order in process func may need update
+
+        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed_array);
 
         Ok(())
-        // instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed)
     }
 
     pub fn claim_sol_winnings(ctx: Context<ClaimSolWinnings>, round_id_for_pdas: u64) -> Result<()> {
         instructions::claim_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
+    }
+
+    pub fn claim_cashino_rewards(ctx: Context<ClaimCashinoRewards>, round_id_for_pdas: u64) -> Result<()>{
+        instructions::claim_cashino_rewards::process_claim_cashino_rewards(ctx, round_id_for_pdas)
     }
 
     pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {

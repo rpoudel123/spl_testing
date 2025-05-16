@@ -95,29 +95,44 @@ pub fn process_claim_sol_winnings(
         ctx.accounts.game_pot_sol.key(),
         ctx.accounts.winner.key()
     );
+    let game_pot_account_info = ctx.accounts.game_pot_sol.to_account_info();
+    let winner_account_info = ctx.accounts.winner.to_account_info();
+    let game_pot_lamports = game_pot_account_info.lamports();
+    msg!("Acctual lamports in GamePOTSOL PDA: {}", game_pot_lamports);
+    let rent_for_game_pot = Rent::get()?.minimum_balance(game_pot_account_info.data_len());
 
-    let game_pot_bump = ctx.bumps.game_pot_sol;
-    let game_pot_seeds_for_cpi: &[&[u8]] = &[
-        b"sol_pot".as_ref(),
-        &round_id_for_pdas.to_le_bytes(),
-        &[game_pot_bump],
-    ];
-    let all_game_pot_signer_seeds = &[game_pot_seeds_for_cpi][..];
+    if game_pot_lamports <= rent_for_game_pot {
+        msg!(
+            "GamePotSol has no transferable lamports ({} total, {} needed for rent).",
+            game_pot_lamports,
+            rent_for_game_pot
+        );
+        // Even if calculatedWinnings was > 0, if the pot is empty (e.g. already claimed or error in previous step), there's nothing to transfer.
+        return Ok(());
+    }
 
-    invoke_signed(
-        &system_instruction::transfer(
-            &ctx.accounts.game_pot_sol.key(),
-            ctx.accounts.winner.key,
-            winnings_amount,
-        ),
-        &[
-            ctx.accounts.game_pot_sol.to_account_info(),
-            ctx.accounts.winner.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        all_game_pot_signer_seeds,
-    )?;
-    msg!("$SOL Winnings transferred successfully to winner.");
+    let available_to_transfer_from_pot = game_pot_lamports
+        .checked_sub(rent_for_game_pot)
+        .ok_or(ErrorCode::InsufficientFunds)?;
+    let amount_to_actually_transfer =
+        std::cmp::min(winnings_amount, available_to_transfer_from_pot);
+
+    if amount_to_actually_transfer == 0 {
+        msg!("Actual amount to transfer is 0. No SOL transferred.");
+        return Ok(());
+    }
+
+    msg!(
+        "Attempting to directly transfer {} SOL winnings from GamePotSol {} to winner {}",
+        amount_to_actually_transfer,
+        game_pot_account_info.key(),
+        winner_account_info.key()
+    );
+
+    **game_pot_account_info.try_borrow_mut_lamports()? -= amount_to_actually_transfer;
+    **winner_account_info.try_borrow_mut_lamports()? += amount_to_actually_transfer;
+
+    msg!("$SOL Winnings of {} lamports transferred successfully to winner.", amount_to_actually_transfer);
 
     msg!("--- ClaimSolWinnings finished ---");
     Ok(())

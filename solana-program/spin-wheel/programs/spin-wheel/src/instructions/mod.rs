@@ -38,3 +38,7 @@ pub use claim_winnings::*;
 // Game Admin
 pub mod game_admin;
 pub use game_admin::*;
+
+// Claim CASHION TOKEN
+pub mod claim_cashino_rewards;
+pub use claim_cashino_rewards::*;

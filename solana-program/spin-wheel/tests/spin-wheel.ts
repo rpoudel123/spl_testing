@@ -690,8 +690,136 @@ describe('spin wheel game logic tests', () => {
         assert.isTrue(totalCalculatedCashinoRewards.lte(CASHINO_REWARD_PER_ROUND_UNITS_TS), "Total calculated rewards exceed total minted");
 
         console.log("endGameRound test completed successfully.");
+    });
 
+    it("Allows the correct winner to claim their SOL winnings", async () => {
+        console.log(`Test: Claiming SOL winnings for round (PDA ID for PDAs): ${currentRoundIdForSeed.toString()}`);
+        const roundStateInfo = await program.account.roundState.fetch(roundStatePda);
 
+        assert.isFalse(roundStateInfo.isActive, "Round should be inactive to claim winnings.");
+        assert.isNotNull(roundStateInfo.winnerIndex, "Winner index must be set in RoundState.");
+
+        const winnerIndex = roundStateInfo.winnerIndex!; // Non-null assertion after check
+
+        const winnerPlayerData = roundStateInfo.players[winnerIndex];
+        const winnerPublicKey = winnerPlayerData.pubkey;
+
+        console.log(`Test: Determined winner from RoundState: Pubkey ${winnerPublicKey.toBase58()} at index ${winnerIndex}`);
+
+        // Determine the Keypair for the winner to sign the transaction
+        let winnerSignerKeypair: anchor.web3.Keypair;
+        const defaultWalletKeypair = (provider.wallet as anchor.Wallet).payer; // This is the Keypair for the default wallet
+
+        if (defaultWalletKeypair.publicKey.equals(winnerPublicKey)) {
+            winnerSignerKeypair = defaultWalletKeypair;
+            console.log(`Test: Winner is the main provider wallet (${winnerPublicKey.toBase58()}).`);
+        } else if (player2Keypair && player2Keypair.publicKey.equals(winnerPublicKey)) {
+            winnerSignerKeypair = player2Keypair;
+            console.log(`Test: Winner is Player 2 (${winnerPublicKey.toBase58()}), using player2Keypair to sign.`);
+        } else {
+            // This case implies the test doesn't have the private key for the determined winner.
+            // For a positive test of claimSolWinnings, this is an issue.
+            // Consider failing the test here or ensuring the test setup guarantees a known winner.
+            throw new Error(
+                `Winner ${winnerPublicKey.toBase58()} is not a controlled keypair in this test. Cannot sign claim transaction.`
+            );
+        }
+
+        const calculatedWinningsBN = roundStateInfo.totalSolPot.sub(roundStateInfo.houseSolFee); // BN
+        const calculatedWinningsBigInt = BigInt(calculatedWinningsBN.toString());
+        console.log(`Test: Calculated SOL winnings for winner (BN): ${calculatedWinningsBN.toString()}`);
+        console.log(`Test: Calculated SOL winnings for winner (BigInt): ${calculatedWinningsBigInt.toString()}`);
+
+        // If winnings are zero or less, the behavior of balances will be different.
+        // The claim might still proceed (e.g., to update some state if applicable) or might not change balances.
+        if (calculatedWinningsBN.lten(0)) { // BN lten is less than or equal to zero
+            console.warn(`Calculated winnings are ${calculatedWinningsBN.toString()}. The winner will only pay transaction fees.`);
+        }
+
+        const initialWinnerWalletBalance = BigInt(await connection.getBalance(winnerPublicKey));
+        const initialGamePotSolBalanceOnChain = BigInt(await connection.getBalance(gamePotSolPda));
+        console.log(`Test: Initial Winner (${winnerPublicKey.toBase58()}) Wallet Balance: ${initialWinnerWalletBalance.toString()}`);
+        console.log(`Test: Initial GamePotSol PDA Balance (before claim): ${initialGamePotSolBalanceOnChain.toString()}`);
+
+        // If the game pot is already zero and winnings are also zero (or less),
+        // the claim instruction might not change balances or could even be uncallable if it expects funds.
+        // Your Rust code allows claim even if winnings_amount is 0.
+        if (initialGamePotSolBalanceOnChain === BigInt(0) && calculatedWinningsBN.lten(0)) {
+            console.log("Game pot is empty and winnings are zero or less. Skipping balance change assertions for winner wallet related to winnings.");
+            // You might still call claim if it has other effects or want to ensure it doesn't error.
+        }
+
+        const txBuilder = program.methods
+            .claimSolWinnings(currentRoundIdForSeed) // currentRoundIdForSeed is BN, matches u64
+            .accounts({
+                winner: winnerPublicKey, // The Pubkey of the Signer
+                roundState: roundStatePda,
+                gamePotSol: gamePotSolPda,
+                systemProgram: anchor.web3.SystemProgram.programId,
+            });
+
+        // Explicitly add the winnerSignerKeypair if it's not the default fee payer wallet.
+        // Anchor automatically adds provider.wallet.payer if it's the fee payer.
+        // Since `winner` is a Signer, if `winnerPublicKey` isn't the default wallet's,
+        // we must explicitly provide its Keypair.
+        if (!defaultWalletKeypair.publicKey.equals(winnerPublicKey)) {
+            txBuilder.signers([winnerSignerKeypair]);
+            console.log(`Test: Explicitly adding signer: ${winnerSignerKeypair.publicKey.toBase58()}`);
+        }
+        // If winnerSignerKeypair IS defaultWalletKeypair, Anchor handles its signature as it's the fee payer
+        // AND its public key matches the `winner` account which is declared as Signer<'info>.
+
+        const transactionSignature = await txBuilder.rpc({ skipPreflight: true, commitment: "confirmed" });
+
+        await confirmTx(transactionSignature); // Uses global connection defined in the test setup
+        console.log("Transaction for claimSolWinnings confirmed.");
+
+        const finalWinnerWalletBalance = BigInt(await connection.getBalance(winnerPublicKey));
+        const finalGamePotSolBalanceOnChain = BigInt(await connection.getBalance(gamePotSolPda));
+
+        console.log(`Test: Final Winner Wallet Balance: ${finalWinnerWalletBalance.toString()}`);
+        console.log(`Test: Final GamePotSol PDA Balance: ${finalGamePotSolBalanceOnChain.toString()}`);
+
+        const expectedGamePotSolBalanceAfterClaim = initialGamePotSolBalanceOnChain - calculatedWinningsBigInt;
+
+        assert.strictEqual(
+            finalGamePotSolBalanceOnChain.toString(),
+            expectedGamePotSolBalanceAfterClaim.toString(),
+            "GamePotSol balance after claim mismatch"
+        );
+
+        // Calculate estimated transaction fee paid by the winner
+        // This is an approximation as actual fees can vary slightly.
+        // finalBalance = initialBalance + winnings - fee  => fee = initialBalance + winnings - finalBalance
+        const estimatedFeePaidByWinner = initialWinnerWalletBalance + calculatedWinningsBigInt - finalWinnerWalletBalance;
+        console.log(`Test: Estimated fee paid by winner: ${estimatedFeePaidByWinner.toString()} lamports.`);
+
+        // Allow for a small discrepancy in fee calculation / other minor balance changes.
+        const maxExpectedFee = BigInt(10000); // e.g., 0.00001 SOL, a typical fee for a simple transaction. Adjust if needed.
+
+        if (calculatedWinningsBigInt > BigInt(0)) {
+            assert.isTrue(
+                finalWinnerWalletBalance >= initialWinnerWalletBalance + calculatedWinningsBigInt - maxExpectedFee,
+                `Winner wallet balance should increase by approx winnings. Final: ${finalWinnerWalletBalance}, Initial: ${initialWinnerWalletBalance}, Winnings: ${calculatedWinningsBigInt}`
+            );
+            // Ensure it didn't increase by MORE than winnings significantly (e.g. some other source of funds)
+            assert.isTrue(
+                finalWinnerWalletBalance <= initialWinnerWalletBalance + calculatedWinningsBigInt,
+                `Winner wallet balance increase too large. Final: ${finalWinnerWalletBalance}, Initial: ${initialWinnerWalletBalance}, Winnings: ${calculatedWinningsBigInt}`
+            );
+
+        } else { // Winnings were zero or negative
+            assert.isTrue(
+                finalWinnerWalletBalance <= initialWinnerWalletBalance, // Balance should decrease or stay same (if fee was 0, unlikely)
+                `Winner wallet balance should decrease or stay same if no winnings. Final: ${finalWinnerWalletBalance}, Initial: ${initialWinnerWalletBalance}`
+            );
+            assert.isTrue(
+                finalWinnerWalletBalance >= initialWinnerWalletBalance - maxExpectedFee,
+                `Winner wallet balance decreased more than expected max fee. Final: ${finalWinnerWalletBalance}, Initial: ${initialWinnerWalletBalance}`
+            );
+        }
+
+        console.log(`claimSolWinnings test for winner ${winnerPublicKey.toBase58()} completed successfully.`);
     });
 
 });
