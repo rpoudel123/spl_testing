@@ -431,6 +431,90 @@ describe('Spin Wheel Game Setup', () => {
         console.log("finalizeRound test assertions passed.");
     });
 
+    it("Allows winner to claim SOL winnings", async () => {
+        assert.isDefined(testState.currentRoundIdForSeed, "Round ID of the finalized round must be defined on testState");
+        assert.isDefined(testState.roundStatePda, "Round state PDA of the finalized round must be defined on testState");
+        assert.isDefined(testState.gamePotSolPda, "GamePotSol PDA of the finalized round must be defined on testState");
+
+        let roundState = await testState.program.account.roundState.fetch(testState.roundStatePda!);
+        assert.strictEqual(
+            roundState.statusDiscriminant,
+            1,
+            "Round state should be 'WinnerDeterminedFeePaid' before claiming SOL"
+        );
+        assert.strictEqual(roundState.hasWinnerVal, 1, "Winner should have been determined");
+
+        const winnerIndex = roundState.winnerIndexVal;
+        const winningPlayerData = roundState.players[winnerIndex];
+        const winnerPubkey = winningPlayerData.pubkey;
+        let winnerSigner: anchor.web3.Keypair;
+
+        if (winnerPubkey.equals(testState.wallet.publicKey)) {
+            winnerSigner = testState.wallet.payer;
+            console.log(`Claim Test: Winner is Player 1 (Wallet): ${winnerPubkey.toBase58()}`);
+        } else if (winnerPubkey.equals(testState.player2Keypair.publicKey)) {
+            winnerSigner = testState.player2Keypair;
+            console.log(`Claim Test: Winner is Player 2: ${winnerPubkey.toBase58()}`);
+        } else {
+            throw new Error(`Winner pubkey ${winnerPubkey.toBase58()} does not match known test players (Wallet or Player2).`);
+        }
+
+        console.log(`Claim Test: Attempting to claim for Round ID ${testState.currentRoundIdForSeed.toString()}`);
+        console.log(`Claim Test: Winner Index ${winnerIndex}, Signer Pubkey: ${winnerSigner.publicKey.toBase58()}`);
+
+        const winnerBalanceBefore = await testState.connection.getBalance(winnerPubkey);
+        const potBalanceBefore = await testState.connection.getBalance(testState.gamePotSolPda!);
+
+        const gamePotAccountInfo = await testState.connection.getAccountInfo(testState.gamePotSolPda!);
+        assert.isNotNull(gamePotAccountInfo, "Game pot account info should exist");
+        const rentForPot = await testState.connection.getMinimumBalanceForRentExemption(gamePotAccountInfo!.data.length);
+
+        console.log(`Winner balance before claim (${winnerPubkey.toBase58()}): ${winnerBalanceBefore}`);
+        console.log(`Pot SOL balance before claim (${testState.gamePotSolPda!.toBase58()}): ${potBalanceBefore}`);
+        console.log(`Rent for pot account: ${rentForPot}`);
+
+        const txSignature = await testState.program.methods
+            .claimSolWinnings(testState.currentRoundIdForSeed!)
+            .accounts({
+                winner: winnerPubkey,
+                roundState: testState.roundStatePda!,
+                gamePotSol: testState.gamePotSolPda!,
+                systemProgram: anchor.web3.SystemProgram.programId,
+            })
+            .signers([winnerSigner])
+            .rpc({ skipPreflight: false, commitment: "confirmed" });
+
+        await testState.confirmTx(txSignature);
+        console.log("Claim SOL winnings transaction confirmed.");
+
+        const winnerBalanceAfter = await testState.connection.getBalance(winnerPubkey);
+        const potBalanceAfter = await testState.connection.getBalance(testState.gamePotSolPda!);
+        const roundStateAfterClaim = await testState.program.account.roundState.fetch(testState.roundStatePda!);
+
+        console.log(`Winner balance after claim (${winnerPubkey.toBase58()}): ${winnerBalanceAfter}`);
+        console.log(`Pot SOL balance after claim (${testState.gamePotSolPda!.toBase58()}): ${potBalanceAfter}`);
+
+        const expectedWinningsTransferred = potBalanceBefore - rentForPot;
+        console.log(`Expected winnings transferred: ${expectedWinningsTransferred}`);
+
+        const smallGasTolerance = 20000;
+        expect(winnerBalanceAfter).to.be.closeTo(
+            winnerBalanceBefore + expectedWinningsTransferred,
+            smallGasTolerance,
+            "Winner's balance after claim is not as expected (accounting for gas)"
+        );
+
+        assert.strictEqual(potBalanceAfter, rentForPot, "Pot should be reduced to rent-exempt minimum after claim");
+
+        assert.strictEqual(
+            roundStateAfterClaim.statusDiscriminant,
+            1,
+            "Round status should remain 'WinnerDeterminedFeePaid' after SOL claim"
+        );
+
+        console.log("Allows winner to claim SOL winnings test passed.");
+    });
+
     it("Creates reward pot accounts (RoundCashinoRewardsPot PDA and its ATA)", async () => {
         assert.isDefined(testState.currentRoundIdForSeed, "currentRoundIdForSeed must be set from previous tests");
         assert.isDefined(testState.roundStatePda, "roundStatePda must be set");
@@ -673,4 +757,112 @@ describe('Spin Wheel Game Setup', () => {
         }
         console.log("calculateRewardEntitlements test completed successfully.");
     });
+
+    it("Player claims CASHINO rewards", async () => {
+        const roundStatePreClaimCheck = await testState.program.account.roundState.fetch(testState.roundStatePda!);
+        assert.strictEqual(roundStatePreClaimCheck.statusDiscriminant, 4, "Round status must be RewardsProcessed (4) before claiming CASHINO rewards.");
+
+        const playerToClaim = testState.wallet.publicKey;
+        const playerSigner = testState.wallet.payer;
+        const roundId = testState.currentRoundIdForSeed!;
+
+        assert.isDefined(testState.cashinoMintPublicKey, "Cashino mint public key must be defined on testState");
+        assert.isDefined(testState.roundStatePda, "RoundStatePda must be defined on testState");
+        assert.isDefined(testState.gameStatePda, "GameStatePda must be defined on testState");
+        assert.isDefined(testState.roundCashinoRewardsPotAccountPda, "RoundCashinoRewardsPotAccountPda must be defined on testState");
+        assert.isDefined(testState.roundCashinoRewardsPotAta, "RoundCashinoRewardsPotAta (the pot's token account) must be defined on testState");
+
+        const playerCashinoAta = getAssociatedTokenAddressSync(
+            testState.cashinoMintPublicKey,
+            playerToClaim,
+            false,
+            TOKEN_2022_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+
+        await getOrCreateAssociatedTokenAccount(
+            testState.connection,
+            playerSigner,
+            testState.cashinoMintPublicKey,
+            playerToClaim,
+            false,
+            undefined,
+            undefined,
+            TOKEN_2022_PROGRAM_ID,
+            ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+
+        const potAtaBefore = await getAccount(testState.connection, testState.roundCashinoRewardsPotAta!, "confirmed", TOKEN_2022_PROGRAM_ID);
+        const playerAtaBefore = await getAccount(testState.connection, playerCashinoAta, "confirmed", TOKEN_2022_PROGRAM_ID);
+
+        console.log(`Claiming CASHINO for player: ${playerToClaim.toBase58()}`);
+        console.log(`Round ID: ${roundId.toString()}`);
+        console.log(`Pot ATA (${testState.roundCashinoRewardsPotAta!.toBase58()}) balance before claim: ${potAtaBefore.amount.toString()}`);
+        console.log(`Player ATA (${playerCashinoAta.toBase58()}) balance before claim: ${playerAtaBefore.amount.toString()}`);
+
+        const roundStateBeforeClaim = await testState.program.account.roundState.fetch(testState.roundStatePda!);
+        const rewardIndex = roundStateBeforeClaim.playerCashinoRewards.findIndex(r => r.player.equals(playerToClaim));
+
+        assert.isTrue(rewardIndex !== -1, `Player ${playerToClaim.toBase58()} not found in reward entitlements.`);
+        assert.strictEqual(roundStateBeforeClaim.playerCashinoRewards[rewardIndex].claimedVal, 0, "Reward should not have been claimed yet.");
+
+        const rewardAmount = roundStateBeforeClaim.playerCashinoRewards[rewardIndex].cashinoRewardAmount;
+        console.log(`Expected reward amount for player: ${rewardAmount.toString()}`);
+        console.log("RECHECK ROUND CASHINO REWARDS POT ATA: ", testState.roundCashinoRewardsPotAta.toBase58());
+        const tx = await testState.program.methods
+            .claimCashinoRewards(roundId)
+            .accounts({
+                player: playerToClaim,
+                gameState: testState.gameStatePda,
+                roundState: testState.roundStatePda,
+                roundCashinoRewardsPotAccount: testState.roundCashinoRewardsPotAccountPda,
+                roundCashinoRewardsPotAta: testState.roundCashinoRewardsPotAta,
+                cashinoTokenMint: testState.cashinoMintPublicKey,
+                playerCashinoAta: playerCashinoAta,
+                tokenProgram: TOKEN_2022_PROGRAM_ID,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                systemProgram: anchor.web3.SystemProgram.programId,
+            })
+            .signers([playerSigner])
+            .rpc({ skipPreflight: false, commitment: "confirmed" });
+
+        await testState.confirmTx(tx);
+
+        const potAtaAfter = await getAccount(testState.connection, testState.roundCashinoRewardsPotAta!, "confirmed", TOKEN_2022_PROGRAM_ID);
+        const playerAtaAfter = await getAccount(testState.connection, playerCashinoAta, "confirmed", TOKEN_2022_PROGRAM_ID);
+
+        console.log(`Pot ATA balance after claim: ${potAtaAfter.amount.toString()}`);
+        console.log(`Player ATA balance after claim: ${playerAtaAfter.amount.toString()}`);
+
+        assert.strictEqual(
+            potAtaAfter.amount.toString(),
+            (BigInt(potAtaBefore.amount.toString()) - BigInt(rewardAmount.toString())).toString(),
+            "Pot ATA balance incorrect after claim."
+        );
+
+        const transferFeeBp = 100;
+        const netReward = BigInt(rewardAmount.toString()) * BigInt(10000 - transferFeeBp) / BigInt(10000);
+
+        assert.strictEqual(
+            playerAtaAfter.amount.toString(),
+            (BigInt(playerAtaBefore.amount.toString()) + netReward).toString(),
+            "Player ATA balance incorrect after claim (did not account for transfer fee)."
+        );
+
+
+        // assert.strictEqual(
+        //     playerAtaAfter.amount.toString(),
+        //     (BigInt(playerAtaBefore.amount.toString()) + BigInt(rewardAmount.toString())).toString(),
+        //     "Player ATA balance incorrect after claim."
+        // );
+
+        const roundStateAfterClaim = await testState.program.account.roundState.fetch(testState.roundStatePda!);
+        assert.strictEqual(
+            roundStateAfterClaim.playerCashinoRewards[rewardIndex].claimedVal,
+            1,
+            "Reward claimed_val flag not set correctly."
+        );
+        console.log("Player claims CASHINO rewards test passed.");
+    });
+
 }); 

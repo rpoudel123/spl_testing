@@ -1,10 +1,8 @@
+use crate::{ErrorCode, GameState, RoundCashinoRewardsPot, RoundState, RoundStatus};
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token_interface::{self, Mint, TokenAccount, Token2022, TransferChecked},
-};
-use crate::{
-    GameState, RoundState, PlayerCashinoRewards, RoundCashinoRewardsPot, ErrorCode,
+    token_interface::{self, spl_token_2022, Mint, Token2022, TokenAccount, TransferChecked},
 };
 
 #[derive(Accounts)]
@@ -23,9 +21,9 @@ pub struct ClaimCashinoRewards<'info> {
         mut,
         seeds = [b"round_state".as_ref(), &round_id_for_pdas.to_le_bytes().as_ref()],
         bump,
-        constraint = !round_state.is_active @ ErrorCode::RoundStillActive,
+        constraint = round_state.load()?.status_discriminant == RoundStatus::RewardsProcessed as u8 @ ErrorCode::RoundNotInCorrectStateForRewardDistribution,
     )]
-    pub round_state: Box<Account<'info, RoundState>>,
+    pub round_state: AccountLoader<'info, RoundState>,
 
     #[account(
         seeds = [b"cashino_round_pot".as_ref(), &round_id_for_pdas.to_le_bytes()],
@@ -38,6 +36,7 @@ pub struct ClaimCashinoRewards<'info> {
         mut,
         associated_token::mint = cashino_token_mint,
         associated_token::authority = round_cashino_rewards_pot_account,
+        associated_token::token_program = token_program
     )]
     pub round_cashino_rewards_pot_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
@@ -51,10 +50,11 @@ pub struct ClaimCashinoRewards<'info> {
         payer = player,
         associated_token::mint = cashino_token_mint,
         associated_token::authority = player,
+        associated_token::token_program = token_program
     )]
     pub player_cashino_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    // Programs
+    #[account(address = spl_token_2022::ID @ ErrorCode::InvalidTokenProgram)]
     pub token_program: Program<'info, Token2022>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -68,19 +68,32 @@ pub fn process_claim_cashino_rewards(
     msg!("Player claiming rewards: {}", ctx.accounts.player.key());
     msg!("For Round ID (used for PDAs): {}", round_id_for_pdas);
     msg!("RoundState PDA: {}", ctx.accounts.round_state.key());
-    msg!("RoundCashinoRewardsPot Account PDA: {}", ctx.accounts.round_cashino_rewards_pot_account.key());
-    msg!("RoundCashinoRewardsPot ATA (source): {}", ctx.accounts.round_cashino_rewards_pot_ata.key());
-    msg!("Player's $CASHINO ATA (destination): {}", ctx.accounts.player_cashino_ata.key());
+    msg!(
+        "RoundCashinoRewardsPot Account PDA: {}",
+        ctx.accounts.round_cashino_rewards_pot_account.key()
+    );
+    msg!(
+        "RoundCashinoRewardsPot ATA (source): {}",
+        ctx.accounts.round_cashino_rewards_pot_ata.key()
+    );
+    msg!(
+        "Player's $CASHINO ATA (destination): {}",
+        ctx.accounts.player_cashino_ata.key()
+    );
 
-    let round_state = &mut ctx.accounts.round_state;
+    let round_state = &mut ctx.accounts.round_state.load_mut()?;
 
     let mut amount_to_claim: u64 = 0;
     let mut player_reward_index: Option<usize> = None;
 
     for i in 0..(round_state.player_count as usize) {
         if round_state.player_cashino_rewards[i].player == ctx.accounts.player.key() {
-            if round_state.player_cashino_rewards[i].claimed {
-                msg!("Error: Player {} has already claimed rewards for round {}.", ctx.accounts.player.key(), round_state.id);
+            if round_state.player_cashino_rewards[i].claimed_val == 1 {
+                msg!(
+                    "Error: Player {} has already claimed rewards for round {}.",
+                    ctx.accounts.player.key(),
+                    round_state.id
+                );
                 return err!(ErrorCode::RewardAlreadyClaimed);
             }
             amount_to_claim = round_state.player_cashino_rewards[i].cashino_reward_amount;
@@ -92,21 +105,32 @@ pub fn process_claim_cashino_rewards(
     }
 
     let player_reward_idx = player_reward_index.ok_or_else(|| {
-        msg!("Error: Player {} not found in reward entitlements for round {}.", ctx.accounts.player.key(), round_state.id);
+        msg!(
+            "Error: Player {} not found in reward entitlements for round {}.",
+            ctx.accounts.player.key(),
+            round_state.id
+        );
         ErrorCode::NotEligibleForReward
     })?;
 
     if amount_to_claim == 0 {
-        msg!("Player {} is entitled to 0 $CASHINO for round {}. No tokens to transfer.",
-            ctx.accounts.player.key(), round_state.id);
+        msg!(
+            "Player {} is entitled to 0 $CASHINO for round {}. No tokens to transfer.",
+            ctx.accounts.player.key(),
+            round_state.id
+        );
         // Mark as claimed even if amount is 0 to prevent re-processing
-        round_state.player_cashino_rewards[player_reward_idx].claimed = true;
-        msg!("Marked 0 amount reward as claimed for player {}.", ctx.accounts.player.key());
+        round_state.player_cashino_rewards[player_reward_idx].claimed_val = 1;
+        msg!(
+            "Marked 0 amount reward as claimed for player {}.",
+            ctx.accounts.player.key()
+        );
         msg!("--- ClaimCashinoRewards finished (0 amount) ---");
         return Ok(());
     }
 
-    msg!("Attempting to transfer {} $CASHINO from rewards pot ATA {} to player ATA {}",
+    msg!(
+        "Attempting to transfer {} $CASHINO from rewards pot ATA {} to player ATA {}",
         amount_to_claim,
         ctx.accounts.round_cashino_rewards_pot_ata.key(),
         ctx.accounts.player_cashino_ata.key()
@@ -127,7 +151,10 @@ pub fn process_claim_cashino_rewards(
             TransferChecked {
                 from: ctx.accounts.round_cashino_rewards_pot_ata.to_account_info(),
                 to: ctx.accounts.player_cashino_ata.to_account_info(),
-                authority: ctx.accounts.round_cashino_rewards_pot_account.to_account_info(),
+                authority: ctx
+                    .accounts
+                    .round_cashino_rewards_pot_account
+                    .to_account_info(),
                 mint: ctx.accounts.cashino_token_mint.to_account_info(),
             },
             all_pot_signer_seeds,
@@ -135,10 +162,17 @@ pub fn process_claim_cashino_rewards(
         amount_to_claim,
         ctx.accounts.cashino_token_mint.decimals,
     )?;
-    msg!("Successfully transferred {} $CASHINO to player {}.", amount_to_claim, ctx.accounts.player.key());
+    msg!(
+        "Successfully transferred {} $CASHINO to player {}.",
+        amount_to_claim,
+        ctx.accounts.player.key()
+    );
 
-    round_state.player_cashino_rewards[player_reward_idx].claimed = true;
-    msg!("Marked $CASHINO reward as claimed for player {}.", ctx.accounts.player.key());
+    round_state.player_cashino_rewards[player_reward_idx].claimed_val = 1;
+    msg!(
+        "Marked $CASHINO reward as claimed for player {}.",
+        ctx.accounts.player.key()
+    );
     msg!("--- ClaimCashinoRewards finished ---");
     Ok(())
 }

@@ -102,20 +102,23 @@ export class TestState {
         if (!this.currentRoundIdForSeed) {
             throw new Error("currentRoundIdForSeed is not set. Cannot derive round PDAs.");
         }
+
         [this.roundStatePda] = anchor.web3.PublicKey.findProgramAddressSync(
             [Buffer.from("round_state"), this.currentRoundIdForSeed.toBuffer("le", 8)],
             this.program.programId
         );
+
         [this.gamePotSolPda] = anchor.web3.PublicKey.findProgramAddressSync(
             [Buffer.from("sol_pot"), this.currentRoundIdForSeed.toBuffer("le", 8)],
             this.program.programId
         );
+
         [this.roundCashinoRewardsPotAccountPda] = anchor.web3.PublicKey.findProgramAddressSync(
             [Buffer.from("cashino_round_pot"), this.currentRoundIdForSeed.toBuffer("le", 8)],
             this.program.programId
         );
 
-        if (this.roundCashinoRewardsPotAccountPda) {
+        if (this.roundCashinoRewardsPotAccountPda && this.cashinoMintPublicKey) {
             this.roundCashinoRewardsPotAta = getAssociatedTokenAddressSync(
                 this.cashinoMintPublicKey,
                 this.roundCashinoRewardsPotAccountPda,
@@ -123,6 +126,14 @@ export class TestState {
                 TOKEN_2022_PROGRAM_ID,
                 ASSOCIATED_TOKEN_PROGRAM_ID
             );
+            console.log(`Client derived roundCashinoRewardsPotAta for round ${this.currentRoundIdForSeed.toString()}: ${this.roundCashinoRewardsPotAta.toBase58()}`);
+        } else {
+            if (!this.roundCashinoRewardsPotAccountPda) {
+                console.warn("deriveRoundPdAs: roundCashinoRewardsPotAccountPda is not set, cannot derive its ATA.");
+            }
+            if (!this.cashinoMintPublicKey) {
+                console.warn("deriveRoundPdAs: cashinoMintPublicKey is not set, cannot derive roundCashinoRewardsPotAta.");
+            }
         }
     }
 

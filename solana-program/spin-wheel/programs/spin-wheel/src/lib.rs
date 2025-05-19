@@ -297,6 +297,26 @@ pub mod spin_wheel {
         )
     }
 
+    pub fn claim_sol_winnings(
+        ctx: Context<ClaimSolWinnings>,
+        round_id_for_pdas: u64,
+    ) -> Result<()> {
+        instructions::claim_sol_winnings::process_claim_sol_winnings(
+            ctx,
+            round_id_for_pdas,
+        )
+    }
+    
+    pub fn claim_cashino_rewards(
+        ctx: Context<ClaimCashinoRewards>,
+        round_id_for_pdas: u64,
+    ) -> Result<()> {
+        instructions::claim_cashino_rewards::process_claim_cashino_rewards(
+            ctx,
+            round_id_for_pdas,
+        )
+    }
+
     pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {
         instructions::game_admin::process_update_game_fee(ctx, new_fee_basis_points)
     }
