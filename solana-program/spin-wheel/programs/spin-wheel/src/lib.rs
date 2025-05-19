@@ -1,81 +1,12 @@
 use anchor_lang::prelude::*;
 mod instructions;
-use instructions::*;
 use bytemuck::{Pod, Zeroable};
+use instructions::*;
 
 declare_id!("21HrGEnTMroXcp54bTCQKmgYS3uvbczsMRV6cBWGAnDV");
 
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Invalid authority pda provided.")]
-    InvalidMintAuthorityPDA,
-    #[msg("Bump seed not found for PDA.")]
-    BumpSeedNotInHashMap,
-    #[msg("Transfer amount is less than the calculated fee.")]
-    TransferAmountLessThanFee,
-    #[msg("Fee calculation failed.")]
-    FeeCalculationFailed,
-    #[msg("Invalid mint account provided.")]
-    InvalidMintAccount,
-    #[msg("Round is not active")]
-    RoundNotActive,
-    #[msg("Round is already active")]
-    RoundAlreadyActive,
-    #[msg("Round has not ended")]
-    RoundNotEnded,
-    #[msg("Invalid bet amount")]
-    InvalidBetAmount,
-    #[msg("Insufficient funds")]
-    InsufficientFunds,
-    #[msg("Unauthorized access")]
-    UnauthorizedAccess,
-    #[msg("Invalid seed commitment")]
-    InvalidSeedCommitment,
-    #[msg("Invalid revealed seed")]
-    InvalidRevealedSeed,
-    #[msg("Round has no players")]
-    NoPlayers,
-    #[msg("Maximum players reached")]
-    MaxPlayersReached,
-    #[msg("Bet window closed")]
-    BetWindowClosed,
-    #[msg("Invalid time parameters")]
-    InvalidTimeParameters,
-    #[msg("Spin already in progress")]
-    SpinInProgress,
-    #[msg("Calculation error")]
-    CalculationError,
-    #[msg("Invalid house fee")]
-    InvalidHouseFee,
-    #[msg("Invalid house fee config")]
-    InvalidHouseFeeConfig,
-    #[msg("Invalid round ID provided for PDA seed")]
-    InvalidRoundIdForSeed,
-    #[msg("Game calculation error")]
-    GameCalculationError,
-    #[msg("No players in round")]
-    NoPlayersInRound,
-    #[msg("Error in PDA Bump")]
-    PdaBumpError,
-    #[msg("Round is still active")]
-    RoundStillActive,
-    #[msg("Winner not yet determined for this round.")]
-    WinnerNotDetermined,
-    #[msg("Reward already claimed")]
-    RewardAlreadyClaimed,
-    #[msg("Not Eligible for rewards")]
-    NotEligibleForReward,
-    #[msg("Invalid game state")]
-    InvalidGameState,
-    #[msg("Round is not in the correct state for reward distribution.")]
-    RoundNotInCorrectStateForRewardDistribution,
-    #[msg("Invalid token program ID provided.")]
-    InvalidTokenProgram,
-    #[msg("Round is not in the correct state.")]
-    RoundNotInCorrectState,
-    #[msg("Invalid status discriminant.")]
-    InvalidStatusDiscriminant
-}
+mod error;
+pub use error::ErrorCode;
 
 pub const MINT_AUTHORITY_SEED: &[u8] = b"mint_authority";
 pub const INITIAL_GAME_HOUSE_FEE_BASIS_POINTS: u16 = 10;
@@ -142,7 +73,7 @@ pub struct PlayerCashinoRewards {
     pub sol_bet_amount: u64,
     pub cashino_reward_amount: u64,
     pub claimed_val: u8,
-    pub _padding_pcr: [u8; 7]
+    pub _padding_pcr: [u8; 7],
 }
 
 #[repr(u8)]
@@ -189,7 +120,13 @@ pub struct RoundState {
 }
 
 impl RoundState {
-    pub fn initialize_new(&mut self, id: u64, start_time: i64, end_time: i64, seed_commitment: SeedArray) {
+    pub fn initialize_new(
+        &mut self,
+        id: u64,
+        start_time: i64,
+        end_time: i64,
+        seed_commitment: SeedArray,
+    ) {
         self.id = id;
         self.start_time = start_time;
         self.end_time = end_time;
@@ -252,7 +189,6 @@ impl RoundState {
     pub fn set_status(&mut self, new_status: RoundStatus) {
         self.status_discriminant = new_status as u8;
     }
-
 }
 
 #[program]
@@ -325,7 +261,11 @@ pub mod spin_wheel {
         revealed_seed_arg: SeedArray,
         round_id_for_pdas: u64,
     ) -> Result<()> {
-        instructions::finalize_round::process_finalize_round(ctx, revealed_seed_arg, round_id_for_pdas)
+        instructions::finalize_round::process_finalize_round(
+            ctx,
+            revealed_seed_arg,
+            round_id_for_pdas,
+        )
     }
 
     pub fn create_reward_pot_accounts(
