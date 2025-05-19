@@ -13,6 +13,7 @@ use crate::{
     MIN_BET_AMOUNT,
     MAX_BET_AMOUNT,
     MAX_PLAYERS,
+    RoundStatus
 };
 
 #[derive(Accounts)]
@@ -22,22 +23,22 @@ pub struct PlaceSolBet<'info> {
     pub player: Signer<'info>,
 
     #[account(seeds = [b"game_state"], bump)]
-    pub game_state: Account<'info, GameState>,
+    pub game_state: Box<Account<'info, GameState>>,
 
     #[account(
         mut, 
         seeds = [b"round_state".as_ref(), &round_id_for_pdas.to_le_bytes().as_ref()],
         bump,
-        constraint = round_state.is_active @ ErrorCode::RoundNotActive,
+        constraint = round_state.load()?.status_discriminant == RoundStatus::Active as u8 @ ErrorCode::RoundNotActive,
     )]
-    pub round_state: Box<Account<'info, RoundState>>,
+    pub round_state: AccountLoader<'info, RoundState>,
 
     #[account(
-        mut, // It will receive SOL
+        mut,
         seeds = [b"sol_pot".as_ref(), &round_id_for_pdas.to_le_bytes().as_ref()],
         bump
     )]
-    pub game_pot: Account<'info, GamePotSol>,
+    pub game_pot: Box<Account<'info, GamePotSol>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -55,7 +56,7 @@ pub fn process_place_sol_bet(
     msg!("GamePotSol PDA: {}", ctx.accounts.game_pot.key());
 
     let player_key = ctx.accounts.player.key();
-    let round_state = &mut ctx.accounts.round_state;
+    let mut round_state = &mut ctx.accounts.round_state.load_mut()?;
     let clock = Clock::get()?;
 
     require!(

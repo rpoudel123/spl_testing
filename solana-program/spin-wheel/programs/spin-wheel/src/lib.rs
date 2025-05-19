@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 mod instructions;
 use instructions::*;
+use bytemuck::{Pod, Zeroable};
 
 declare_id!("21HrGEnTMroXcp54bTCQKmgYS3uvbczsMRV6cBWGAnDV");
 
@@ -16,7 +17,6 @@ pub enum ErrorCode {
     FeeCalculationFailed,
     #[msg("Invalid mint account provided.")]
     InvalidMintAccount,
-    // Spin Wheel Error
     #[msg("Round is not active")]
     RoundNotActive,
     #[msg("Round is already active")]
@@ -67,6 +67,14 @@ pub enum ErrorCode {
     NotEligibleForReward,
     #[msg("Invalid game state")]
     InvalidGameState,
+    #[msg("Round is not in the correct state for reward distribution.")]
+    RoundNotInCorrectStateForRewardDistribution,
+    #[msg("Invalid token program ID provided.")]
+    InvalidTokenProgram,
+    #[msg("Round is not in the correct state.")]
+    RoundNotInCorrectState,
+    #[msg("Invalid status discriminant.")]
+    InvalidStatusDiscriminant
 }
 
 pub const MINT_AUTHORITY_SEED: &[u8] = b"mint_authority";
@@ -81,6 +89,7 @@ const MAX_HOUSE_FEE_PERCENTAGE: u16 = 500;
 const MIN_ROUND_DURATION: i64 = 1;
 const MAX_ROUND_DURATION: i64 = 300;
 const SEED_BYTES_LENGTH: usize = 32;
+pub const CASHINO_REWARD_PER_ROUND_UNITS: u64 = 1_000_000;
 
 pub type SeedArray = [u8; SEED_BYTES_LENGTH];
 
@@ -108,7 +117,8 @@ impl Default for GameState {
     }
 }
 
-#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Default, Debug, Pod, Zeroable)]
+#[repr(C)]
 pub struct PlayerData {
     pub pubkey: Pubkey,
     pub amount: u64,
@@ -125,50 +135,124 @@ pub struct RoundCashinoRewardsPot {
     pub total_minted_for_round: u64,
 }
 
-#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug, Pod, Zeroable, AnchorSerialize, AnchorDeserialize)]
+#[repr(C)]
 pub struct PlayerCashinoRewards {
     pub player: Pubkey,
     pub sol_bet_amount: u64,
     pub cashino_reward_amount: u64,
-    pub claimed: bool,
+    pub claimed_val: u8,
+    pub _padding_pcr: [u8; 7]
 }
 
-#[account]
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum RoundStatus {
+    #[default]
+    Active = 0,
+    WinnerDeterminedFeePaid = 1,
+    RewardPotAccountsCreated = 2,
+    TokensMintedForRewards = 3,
+    RewardsProcessed = 4,
+}
+
+#[account(zero_copy)]
+#[repr(C)]
+#[derive(Debug, Default)]
 pub struct RoundState {
     pub id: u64,
     pub start_time: i64,
     pub end_time: i64,
     pub seed_commitment: SeedArray,
-    pub revealed_seed: Option<SeedArray>,
+
+    pub has_revealed_seed_val: u8,
+    pub _padding0: [u8; 7],
+    pub revealed_seed: SeedArray,
+
     pub total_sol_pot: u64,
     pub player_count: u8,
+
+    pub _padding1: [u8; 7],
     pub players: [PlayerData; MAX_PLAYERS],
+
     pub player_cashino_rewards: [PlayerCashinoRewards; MAX_PLAYERS],
+
     pub total_cashino_minted_for_round: u64,
-    pub is_active: bool,
-    pub winner_index: Option<u8>,
+
+    pub status_discriminant: u8,
+
+    pub has_winner_val: u8,
+    pub winner_index_val: u8,
+
+    pub _padding2: [u8; 5],
     pub house_sol_fee: u64,
 }
 
-impl Default for RoundState {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            start_time: 0,
-            end_time: 0,
-            seed_commitment: [0u8; SEED_BYTES_LENGTH],
-            revealed_seed: None,
-            total_sol_pot: 0,
-            player_count: 0,
-            players: [PlayerData::default(); MAX_PLAYERS],
-            player_cashino_rewards: [PlayerCashinoRewards::default(); MAX_PLAYERS],
-            total_cashino_minted_for_round: 0,
-            is_active: false,
-            winner_index: None,
-            house_sol_fee: 0,
+impl RoundState {
+    pub fn initialize_new(&mut self, id: u64, start_time: i64, end_time: i64, seed_commitment: SeedArray) {
+        self.id = id;
+        self.start_time = start_time;
+        self.end_time = end_time;
+        self.seed_commitment = seed_commitment;
+        self.has_revealed_seed_val = 0;
+        self.total_sol_pot = 0;
+        self.player_count = 0;
+        self.total_cashino_minted_for_round = 0;
+        self.status_discriminant = RoundStatus::Active as u8;
+        self.has_winner_val = 0;
+        self.winner_index_val = 0;
+        self.house_sol_fee = 0;
+    }
+
+    pub fn get_revealed_seed(&self) -> Option<SeedArray> {
+        if self.has_revealed_seed_val == 1 {
+            Some(self.revealed_seed)
+        } else {
+            None
         }
     }
+
+    pub fn set_revealed_seed(&mut self, seed: Option<SeedArray>) {
+        if let Some(s_val) = seed {
+            self.revealed_seed = s_val;
+            self.has_revealed_seed_val = 1;
+        } else {
+            self.has_revealed_seed_val = 0;
+        }
+    }
+
+    pub fn get_winner_index(&self) -> Option<u8> {
+        if self.has_winner_val == 1 {
+            Some(self.winner_index_val)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_winner_index(&mut self, index: Option<u8>) {
+        if let Some(i_val) = index {
+            self.winner_index_val = i_val;
+            self.has_winner_val = 1;
+        } else {
+            self.has_winner_val = 0;
+        }
+    }
+
+    pub fn get_status(&self) -> Result<RoundStatus> {
+        match self.status_discriminant {
+            0 => Ok(RoundStatus::Active),
+            1 => Ok(RoundStatus::WinnerDeterminedFeePaid),
+            2 => Ok(RoundStatus::RewardPotAccountsCreated),
+            3 => Ok(RoundStatus::TokensMintedForRewards),
+            4 => Ok(RoundStatus::RewardsProcessed),
+            _ => Err(error!(ErrorCode::InvalidStatusDiscriminant)),
+        }
+    }
+
+    pub fn set_status(&mut self, new_status: RoundStatus) {
+        self.status_discriminant = new_status as u8;
+    }
+
 }
 
 #[program]
@@ -236,37 +320,41 @@ pub mod spin_wheel {
         instructions::place_bet::process_place_sol_bet(ctx, round_id_for_pdas, amount)
     }
 
-    pub fn end_round(
-        ctx: Context<EndGameRound>,
-        revealed_seed: SeedArray,
+    pub fn finalize_round(
+        ctx: Context<FinalizeRound>,
+        revealed_seed_arg: SeedArray,
         round_id_for_pdas: u64,
     ) -> Result<()> {
-        msg!("NEW_ORDER_REVEALED_SEED_VEC: {:?}", revealed_seed); // Log the Vec
-        msg!("NEW_ORDER_ROUND_ID_FOR_PDA: {:?}", round_id_for_pdas);
-
-        let round_state = &ctx.accounts.round_state;
-        require!(
-            revealed_seed == round_state.seed_commitment,
-            ErrorCode::InvalidRevealedSeed
-        );
-
-        msg!("Revealed seed (from SeedArray arg) matches commitment.");
-
-        instructions::end_round::process_end_game_round(ctx, round_id_for_pdas, revealed_seed)
+        instructions::finalize_round::process_finalize_round(ctx, revealed_seed_arg, round_id_for_pdas)
     }
 
-    pub fn claim_sol_winnings(
-        ctx: Context<ClaimSolWinnings>,
+    pub fn create_reward_pot_accounts(
+        ctx: Context<CreateRewardPotAccounts>,
         round_id_for_pdas: u64,
     ) -> Result<()> {
-        instructions::claim_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
+        instructions::create_reward_pot_accounts::process_create_reward_pot_accounts(
+            ctx,
+            round_id_for_pdas,
+        )
+    }
+    pub fn mint_tokens_to_reward_pot(
+        ctx: Context<MintTokensToRewardPot>,
+        round_id_for_pdas: u64,
+    ) -> Result<()> {
+        instructions::mint_tokens_to_reward_pot::process_mint_tokens_to_reward_pot(
+            ctx,
+            round_id_for_pdas,
+        )
     }
 
-    pub fn claim_cashino_rewards(
-        ctx: Context<ClaimCashinoRewards>,
+    pub fn calculate_reward_entitlements(
+        ctx: Context<CalculateRewardEntitlements>,
         round_id_for_pdas: u64,
     ) -> Result<()> {
-        instructions::claim_cashino_rewards::process_claim_cashino_rewards(ctx, round_id_for_pdas)
+        instructions::calculate_reward_entitlements::process_calculate_reward_entitlements(
+            ctx,
+            round_id_for_pdas,
+        )
     }
 
     pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {

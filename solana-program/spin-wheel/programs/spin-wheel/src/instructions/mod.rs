@@ -27,18 +27,18 @@ pub use start_new_round::*;
 pub mod place_bet;
 pub use place_bet::*;
 
-// End Round
-pub mod end_round;
-pub use end_round::*;
-
-// Claim Winnings
-pub mod claim_winnings;
-pub use claim_winnings::*;
-
 // Game Admin
 pub mod game_admin;
 pub use game_admin::*;
 
-// Claim CASHION TOKEN
-pub mod claim_cashino_rewards;
-pub use claim_cashino_rewards::*;
+pub mod create_reward_pot_accounts;
+pub use create_reward_pot_accounts::*;
+
+pub mod mint_tokens_to_reward_pot;
+pub use mint_tokens_to_reward_pot::*;
+
+pub mod calculate_reward_entitlements;
+pub use calculate_reward_entitlements::*;
+
+pub mod finalize_round;
+pub use finalize_round::*;
