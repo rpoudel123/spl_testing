@@ -70,4 +70,16 @@ pub enum ErrorCode {
     RoundNotInCorrectState,
     #[msg("Invalid status discriminant.")]
     InvalidStatusDiscriminant,
+    #[msg("Unauthorized access to escrow account.")]
+    UnauthorizedEscrowAccess,
+    #[msg("Invalid deposit amount. Must be greater than zero.")]
+    InvalidDepositAmount, // For deposit_sol
+    #[msg("Invalid withdrawal amount. Must be greater than zero.")]
+    InvalidWithdrawalAmount,
+    #[msg("Insufficient platform balance for withdrawal.")]
+    InsufficientPlatformBalance,
+    #[msg("Withdrawal would make the escrow account rent-deficient.")]
+    WithdrawWouldMakeEscrowRentDeficient,
+    #[msg("Invalid house wallet address provided for fee collection.")]
+    InvalidHouseWalletAddress
 }

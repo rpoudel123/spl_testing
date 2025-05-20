@@ -27,3 +27,9 @@ pub use claim_sol_winnings::*;
 
 pub mod claim_cashino_rewards;
 pub use claim_cashino_rewards::*;
+
+pub mod deposit_sol;
+pub use deposit_sol::*;
+
+pub mod withdraw_sol_from_platform;
+pub use withdraw_sol_from_platform::*;

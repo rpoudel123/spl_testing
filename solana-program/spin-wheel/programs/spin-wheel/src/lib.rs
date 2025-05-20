@@ -21,8 +21,17 @@ const MIN_ROUND_DURATION: i64 = 1;
 const MAX_ROUND_DURATION: i64 = 300;
 const SEED_BYTES_LENGTH: usize = 32;
 pub const CASHINO_REWARD_PER_ROUND_UNITS: u64 = 1_000_000;
+pub const WITHDRAWAL_FEE_LAMPORTS: u64 = 10_000_000;
 
 pub type SeedArray = [u8; SEED_BYTES_LENGTH];
+
+#[account]
+#[derive(Default, Debug)]
+pub struct UserPlatformEscrow {
+    pub user_authority: Pubkey,
+    pub balance: u64,
+    pub bump: u8,
+}
 
 #[account]
 #[derive(Debug)]
@@ -301,27 +310,35 @@ pub mod spin_wheel {
         ctx: Context<ClaimSolWinnings>,
         round_id_for_pdas: u64,
     ) -> Result<()> {
-        instructions::claim_sol_winnings::process_claim_sol_winnings(
-            ctx,
-            round_id_for_pdas,
-        )
+        instructions::claim_sol_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
     }
-    
+
     pub fn claim_cashino_rewards(
         ctx: Context<ClaimCashinoRewards>,
         round_id_for_pdas: u64,
     ) -> Result<()> {
-        instructions::claim_cashino_rewards::process_claim_cashino_rewards(
+        instructions::claim_cashino_rewards::process_claim_cashino_rewards(ctx, round_id_for_pdas)
+    }
+
+    pub fn deposit_sol(ctx: Context<DepositSol>, amount: u64) -> Result<()> {
+        instructions::deposit_sol::process_deposit_sol(ctx, amount)
+    }
+
+    pub fn withdraw_sol_from_platform(
+        ctx: Context<WithdrawSolFromPlatform>,
+        amount_to_withdraw: u64,
+    ) -> Result<()> {
+        instructions::withdraw_sol_from_platform::process_withdraw_sol_from_platform(
             ctx,
-            round_id_for_pdas,
+            amount_to_withdraw,
         )
     }
 
-    pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {
-        instructions::game_admin::process_update_game_fee(ctx, new_fee_basis_points)
-    }
-
-    pub fn update_game_house_wallet(ctx: Context<UpdateGameHouseWallet>) -> Result<()> {
-        instructions::game_admin::process_update_game_house_wallet(ctx)
-    }
+    // pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {
+    //     instructions::game_admin::process_update_game_fee(ctx, new_fee_basis_points)
+    // }
+    //
+    // pub fn update_game_house_wallet(ctx: Context<UpdateGameHouseWallet>) -> Result<()> {
+    //     instructions::game_admin::process_update_game_house_wallet(ctx)
+    // }
 }
