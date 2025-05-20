@@ -306,13 +306,6 @@ pub mod spin_wheel {
         )
     }
 
-    pub fn claim_sol_winnings(
-        ctx: Context<ClaimSolWinnings>,
-        round_id_for_pdas: u64,
-    ) -> Result<()> {
-        instructions::claim_sol_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
-    }
-
     pub fn claim_cashino_rewards(
         ctx: Context<ClaimCashinoRewards>,
         round_id_for_pdas: u64,

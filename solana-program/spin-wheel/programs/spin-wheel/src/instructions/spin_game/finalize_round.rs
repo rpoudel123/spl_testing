@@ -1,8 +1,9 @@
 use crate::{
-    ErrorCode, GamePotSol, GameState, RoundState, RoundStatus, SeedArray, SEED_BYTES_LENGTH,
+    ErrorCode, GamePotSol, GameState, RoundState, RoundStatus, SeedArray, UserPlatformEscrow,
+    SEED_BYTES_LENGTH,
 };
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{clock::Clock, hash::hash, rent::Rent};
+use anchor_lang::solana_program::{clock::Clock, hash::hash, pubkey::Pubkey, rent::Rent};
 
 fn determine_winner(round_state: &RoundState, current_timestamp: i64) -> Result<u8> {
     msg!("--- DetermineWinner ---");
@@ -114,6 +115,9 @@ pub struct FinalizeRound<'info> {
     #[account(mut, address = game_state.house_wallet @ ErrorCode::UnauthorizedAccess)]
     pub house_wallet: AccountInfo<'info>,
 
+    #[account(mut)]
+    pub user_escrow: Account<'info, UserPlatformEscrow>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -144,20 +148,23 @@ pub fn process_finalize_round(
         );
     }
 
-    let (winner_index, house_fee) = {
+    let (winner_index, house_fee, net_winnings) = {
         let mut round_rw = ctx.accounts.round_state.load_mut()?;
         let clock = Clock::get()?;
         round_rw.set_revealed_seed(Some(revealed_seed_arg));
         let winner = determine_winner(&round_rw, clock.unix_timestamp)?;
-        let fee = round_rw
-            .total_sol_pot
+        let total_pot = round_rw.total_sol_pot;
+        let fee = total_pot
             .checked_mul(ctx.accounts.game_state.house_fee_basis_points as u64)
             .and_then(|v| v.checked_div(10_000))
+            .ok_or(ErrorCode::GameCalculationError)?;
+        let net = total_pot
+            .checked_sub(fee)
             .ok_or(ErrorCode::GameCalculationError)?;
         round_rw.set_winner_index(Some(winner));
         round_rw.house_sol_fee = fee;
         round_rw.set_status(RoundStatus::WinnerDeterminedFeePaid);
-        (winner, fee)
+        (winner, fee, net)
     };
 
     if house_fee > 0 {
@@ -170,7 +177,32 @@ pub fn process_finalize_round(
         );
         **pot_ai.try_borrow_mut_lamports()? -= house_fee;
         **house_ai.try_borrow_mut_lamports()? += house_fee;
-        msg!("House fee of {} transferred.", house_fee);
+    }
+
+    if net_winnings > 0 {
+        let round_rw = ctx.accounts.round_state.load()?;
+        let winner_pubkey = round_rw.players[winner_index as usize].pubkey;
+        let (expected_escrow, _bump) =
+            Pubkey::find_program_address(&[b"user_escrow", winner_pubkey.as_ref()], ctx.program_id);
+        require!(
+            expected_escrow == ctx.accounts.user_escrow.key(),
+            ErrorCode::UnauthorizedAccess
+        );
+
+        let pot_ai = ctx.accounts.game_pot_sol.to_account_info();
+        let escrow_ai = ctx.accounts.user_escrow.to_account_info();
+        let rent = Rent::get()?.minimum_balance(pot_ai.data_len());
+        require!(
+            pot_ai.lamports().checked_sub(net_winnings).unwrap_or(0) >= rent,
+            ErrorCode::InsufficientFunds
+        );
+        **pot_ai.try_borrow_mut_lamports()? -= net_winnings;
+        **escrow_ai.try_borrow_mut_lamports()? += net_winnings;
+        let escrow = &mut ctx.accounts.user_escrow;
+        escrow.balance = escrow
+            .balance
+            .checked_add(net_winnings)
+            .ok_or(ErrorCode::GameCalculationError)?;
     }
 
     msg!("--- process_finalize_round finished ---");

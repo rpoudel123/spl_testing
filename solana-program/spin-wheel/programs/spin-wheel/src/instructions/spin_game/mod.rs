@@ -22,9 +22,6 @@ pub use mint_tokens_to_reward_pot::*;
 pub mod calculate_reward_entitlements;
 pub use calculate_reward_entitlements::*;
 
-pub mod claim_sol_winnings;
-pub use claim_sol_winnings::*;
-
 pub mod claim_cashino_rewards;
 pub use claim_cashino_rewards::*;
 

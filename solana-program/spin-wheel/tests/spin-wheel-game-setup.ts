@@ -36,7 +36,6 @@ describe('Spin Wheel Game Setup', () => {
         console.log("Airdrop to House Wallet confirmed.");
     });
 
-
     it("Initializes Game Settings", async () => {
         const initialHouseFeeBasisPoints = 10;
 
@@ -429,90 +428,6 @@ describe('Spin Wheel Game Setup', () => {
         );
 
         console.log("finalizeRound test assertions passed.");
-    });
-
-    it("Allows winner to claim SOL winnings", async () => {
-        assert.isDefined(testState.currentRoundIdForSeed, "Round ID of the finalized round must be defined on testState");
-        assert.isDefined(testState.roundStatePda, "Round state PDA of the finalized round must be defined on testState");
-        assert.isDefined(testState.gamePotSolPda, "GamePotSol PDA of the finalized round must be defined on testState");
-
-        let roundState = await testState.program.account.roundState.fetch(testState.roundStatePda!);
-        assert.strictEqual(
-            roundState.statusDiscriminant,
-            1,
-            "Round state should be 'WinnerDeterminedFeePaid' before claiming SOL"
-        );
-        assert.strictEqual(roundState.hasWinnerVal, 1, "Winner should have been determined");
-
-        const winnerIndex = roundState.winnerIndexVal;
-        const winningPlayerData = roundState.players[winnerIndex];
-        const winnerPubkey = winningPlayerData.pubkey;
-        let winnerSigner: anchor.web3.Keypair;
-
-        if (winnerPubkey.equals(testState.wallet.publicKey)) {
-            winnerSigner = testState.wallet.payer;
-            console.log(`Claim Test: Winner is Player 1 (Wallet): ${winnerPubkey.toBase58()}`);
-        } else if (winnerPubkey.equals(testState.player2Keypair.publicKey)) {
-            winnerSigner = testState.player2Keypair;
-            console.log(`Claim Test: Winner is Player 2: ${winnerPubkey.toBase58()}`);
-        } else {
-            throw new Error(`Winner pubkey ${winnerPubkey.toBase58()} does not match known test players (Wallet or Player2).`);
-        }
-
-        console.log(`Claim Test: Attempting to claim for Round ID ${testState.currentRoundIdForSeed.toString()}`);
-        console.log(`Claim Test: Winner Index ${winnerIndex}, Signer Pubkey: ${winnerSigner.publicKey.toBase58()}`);
-
-        const winnerBalanceBefore = await testState.connection.getBalance(winnerPubkey);
-        const potBalanceBefore = await testState.connection.getBalance(testState.gamePotSolPda!);
-
-        const gamePotAccountInfo = await testState.connection.getAccountInfo(testState.gamePotSolPda!);
-        assert.isNotNull(gamePotAccountInfo, "Game pot account info should exist");
-        const rentForPot = await testState.connection.getMinimumBalanceForRentExemption(gamePotAccountInfo!.data.length);
-
-        console.log(`Winner balance before claim (${winnerPubkey.toBase58()}): ${winnerBalanceBefore}`);
-        console.log(`Pot SOL balance before claim (${testState.gamePotSolPda!.toBase58()}): ${potBalanceBefore}`);
-        console.log(`Rent for pot account: ${rentForPot}`);
-
-        const txSignature = await testState.program.methods
-            .claimSolWinnings(testState.currentRoundIdForSeed!)
-            .accounts({
-                winner: winnerPubkey,
-                roundState: testState.roundStatePda!,
-                gamePotSol: testState.gamePotSolPda!,
-                systemProgram: anchor.web3.SystemProgram.programId,
-            })
-            .signers([winnerSigner])
-            .rpc({ skipPreflight: false, commitment: "confirmed" });
-
-        await testState.confirmTx(txSignature);
-        console.log("Claim SOL winnings transaction confirmed.");
-
-        const winnerBalanceAfter = await testState.connection.getBalance(winnerPubkey);
-        const potBalanceAfter = await testState.connection.getBalance(testState.gamePotSolPda!);
-        const roundStateAfterClaim = await testState.program.account.roundState.fetch(testState.roundStatePda!);
-
-        console.log(`Winner balance after claim (${winnerPubkey.toBase58()}): ${winnerBalanceAfter}`);
-        console.log(`Pot SOL balance after claim (${testState.gamePotSolPda!.toBase58()}): ${potBalanceAfter}`);
-
-        const expectedWinningsTransferred = potBalanceBefore - rentForPot;
-        console.log(`Expected winnings transferred: ${expectedWinningsTransferred}`);
-
-        const smallGasTolerance = 20000;
-        expect(winnerBalanceAfter).to.be.closeTo(
-            winnerBalanceBefore + expectedWinningsTransferred,
-            smallGasTolerance,
-            "Winner's balance after claim is not as expected (accounting for gas)"
-        );
-
-        assert.strictEqual(potBalanceAfter, rentForPot, "Pot should be reduced to rent-exempt minimum after claim");
-
-        assert.strictEqual(
-            roundStateAfterClaim.statusDiscriminant,
-            1,
-            "Round status should remain 'WinnerDeterminedFeePaid' after SOL claim"
-        );
-
-        console.log("Allows winner to claim SOL winnings test passed.");
     });
 
     it("Creates reward pot accounts (RoundCashinoRewardsPot PDA and its ATA)", async () => {
