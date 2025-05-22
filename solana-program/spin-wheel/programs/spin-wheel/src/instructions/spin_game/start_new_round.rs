@@ -106,7 +106,7 @@ pub fn process_start_new_round(
         round_state.player_cashino_rewards[i] = PlayerCashinoRewards::default();
     }
     round_state.total_cashino_minted_for_round = 0;
-    round_state.status_discriminant = RoundStatus::Active as u8;
+    round_state.set_status(RoundStatus::Active);
     round_state.has_winner_val = 0;
     round_state.winner_index_val = 0;
     round_state.house_sol_fee = 0;

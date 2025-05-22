@@ -36,8 +36,11 @@ export class TestState {
     roundStatePda?: anchor.web3.PublicKey;
     gamePotSolPda?: anchor.web3.PublicKey;
     roundCashinoRewardsPotAccountPda?: anchor.web3.PublicKey;
+    userPlatformEscrowPda?: anchor.web3.PublicKey;
+    player2PlatformEscrowPda?: anchor.web3.PublicKey;
 
     readonly CASHINO_REWARD_PER_ROUND_UNITS = new BN(1_000_000);
+    readonly WITHDRAWAL_FEE_LAMPORTS = new BN(10_000_000);
     readonly RAW_SEED = "test_seed_commitment_for_round_1";
     readonly SEED_LEN = 32;
     seedCommitmentBuffer: Buffer;
@@ -77,6 +80,15 @@ export class TestState {
         );
         [this.gameStatePda] = anchor.web3.PublicKey.findProgramAddressSync(
             [Buffer.from("game_state")],
+            this.program.programId
+        );
+
+        [this.userPlatformEscrowPda] = anchor.web3.PublicKey.findProgramAddressSync(
+            [Buffer.from("user_escrow"), this.wallet.publicKey.toBuffer()],
+            this.program.programId
+        );
+        [this.player2PlatformEscrowPda] = anchor.web3.PublicKey.findProgramAddressSync(
+            [Buffer.from("user_escrow"), this.player2Keypair.publicKey.toBuffer()],
             this.program.programId
         );
 

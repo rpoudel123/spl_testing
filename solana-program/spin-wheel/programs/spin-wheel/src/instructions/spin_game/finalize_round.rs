@@ -1,6 +1,5 @@
 use crate::{
-    ErrorCode, GamePotSol, GameState, RoundState, RoundStatus, SeedArray, UserPlatformEscrow,
-    SEED_BYTES_LENGTH,
+    ErrorCode, GamePotSol, GameState, RoundState, RoundStatus, SeedArray, SEED_BYTES_LENGTH,
 };
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{clock::Clock, hash::hash, pubkey::Pubkey, rent::Rent};
@@ -78,7 +77,7 @@ fn determine_winner(round_state: &RoundState, current_timestamp: i64) -> Result<
         }
     }
 
-    msg!("DetermineWinner Error: Logic failed to select a winner.");
+    msg!("DetermineWinner Error: Logic failed to select a winner. This should not happen if total_sol_pot > 0 and players exist.");
     err!(ErrorCode::GameCalculationError)
 }
 
@@ -111,12 +110,9 @@ pub struct FinalizeRound<'info> {
     )]
     pub game_pot_sol: Account<'info, GamePotSol>,
 
-    /// CHECK: SOMETHING
-    #[account(mut, address = game_state.house_wallet @ ErrorCode::UnauthorizedAccess)]
+    /// CHECK: This is the house wallet that receives fees. Its address is validated against game_state.house_wallet.
+    #[account(mut, address = game_state.house_wallet @ ErrorCode::InvalidHouseWalletAddress)]
     pub house_wallet: AccountInfo<'info>,
-
-    #[account(mut)]
-    pub user_escrow: Account<'info, UserPlatformEscrow>,
 
     pub system_program: Program<'info, System>,
 }
@@ -127,18 +123,30 @@ pub fn process_finalize_round(
     round_id_for_pdas: u64,
 ) -> Result<()> {
     msg!("--- Instruction: process_finalize_round ---");
-    msg!("Revealed seed: {:?}", revealed_seed_arg);
+    msg!("Round ID for PDAs: {}", round_id_for_pdas);
+    msg!("Revealed seed (arg): {:?}", revealed_seed_arg);
 
+    let clock = Clock::get()?;
+    let current_timestamp = clock.unix_timestamp;
+    msg!("Current on-chain time: {}", current_timestamp);
+
+    // Scope for initial round_state read-only load for checks
     {
         let round_ro = ctx.accounts.round_state.load()?;
-        let clock = Clock::get()?;
-        msg!("STORED seed_commitment: {:?}", round_ro.seed_commitment);
+        msg!("Stored seed_commitment: {:?}", round_ro.seed_commitment);
+        msg!("Round Start Time: {}", round_ro.start_time);
+        msg!("Round End Time: {}", round_ro.end_time);
+        msg!(
+            "Round Current Status Discriminant: {}",
+            round_ro.status_discriminant
+        );
+
         require!(
             round_ro.status_discriminant == RoundStatus::Active as u8,
             ErrorCode::RoundNotActive
         );
         require!(
-            clock.unix_timestamp >= round_ro.end_time,
+            current_timestamp >= round_ro.end_time,
             ErrorCode::RoundNotEnded
         );
         require!(round_ro.player_count > 0, ErrorCode::NoPlayers);
@@ -146,63 +154,74 @@ pub fn process_finalize_round(
             revealed_seed_arg == round_ro.seed_commitment,
             ErrorCode::InvalidRevealedSeed
         );
+        // Ensure this round hasn't already been finalized past this stage
+        require!(
+            round_ro.winner_sol_pubkey == Pubkey::default(),
+            ErrorCode::RoundAlreadyActive
+        );
     }
 
-    let (winner_index, house_fee, net_winnings) = {
-        let mut round_rw = ctx.accounts.round_state.load_mut()?;
-        let clock = Clock::get()?;
-        round_rw.set_revealed_seed(Some(revealed_seed_arg));
-        let winner = determine_winner(&round_rw, clock.unix_timestamp)?;
-        let total_pot = round_rw.total_sol_pot;
-        let fee = total_pot
-            .checked_mul(ctx.accounts.game_state.house_fee_basis_points as u64)
-            .and_then(|v| v.checked_div(10_000))
-            .ok_or(ErrorCode::GameCalculationError)?;
-        let net = total_pot
-            .checked_sub(fee)
-            .ok_or(ErrorCode::GameCalculationError)?;
-        round_rw.set_winner_index(Some(winner));
-        round_rw.house_sol_fee = fee;
-        round_rw.set_status(RoundStatus::WinnerDeterminedFeePaid);
-        (winner, fee, net)
-    };
+    // Load round_state mutably
+    let mut round_rw = ctx.accounts.round_state.load_mut()?;
 
+    round_rw.set_revealed_seed(Some(revealed_seed_arg));
+    msg!("Revealed seed set in RoundState.");
+
+    let winner_index = determine_winner(&round_rw, current_timestamp)?;
+    msg!("Winner index determined: {}", winner_index);
+
+    let winner_pubkey = round_rw.players[winner_index as usize].pubkey;
+    let total_pot_value = round_rw.total_sol_pot;
+
+    let house_fee = total_pot_value
+        .checked_mul(ctx.accounts.game_state.house_fee_basis_points as u64)
+        .and_then(|v| v.checked_div(10_000))
+        .ok_or(ErrorCode::GameCalculationError)?;
+    msg!("House fee calculated: {}", house_fee);
+
+    let net_winnings_for_winner = total_pot_value
+        .checked_sub(house_fee)
+        .ok_or(ErrorCode::GameCalculationError)?;
+    msg!(
+        "Net winnings for winner calculated: {}",
+        net_winnings_for_winner
+    );
+
+    round_rw.set_winner_index(Some(winner_index));
+    round_rw.house_sol_fee = house_fee;
+    round_rw.winner_sol_pubkey = winner_pubkey;
+    round_rw.winner_sol_amount = net_winnings_for_winner;
+    round_rw.winner_sol_claimed = 0;
+
+    round_rw.set_status(RoundStatus::AwaitingSolClaim);
+    msg!(
+        "RoundState updated: Winner Pk: {}, Winner Sol Amount: {}, SOL Claimed: {}, Status: AwaitingSolClaim",
+        round_rw.winner_sol_pubkey, round_rw.winner_sol_amount, round_rw.winner_sol_claimed
+    );
+
+    // Transfer house fee to house_wallet
     if house_fee > 0 {
-        let pot_ai = ctx.accounts.game_pot_sol.to_account_info();
-        let house_ai = ctx.accounts.house_wallet.to_account_info();
-        let rent = Rent::get()?.minimum_balance(pot_ai.data_len());
+        let game_pot_account_info = ctx.accounts.game_pot_sol.to_account_info();
+        let house_wallet_account_info = ctx.accounts.house_wallet.to_account_info();
+
+        let rent_for_pot = Rent::get()?.minimum_balance(game_pot_account_info.data_len());
         require!(
-            pot_ai.lamports().checked_sub(house_fee).unwrap_or(0) >= rent,
+            game_pot_account_info
+                .lamports()
+                .checked_sub(house_fee)
+                .unwrap_or(0)
+                >= rent_for_pot,
             ErrorCode::InsufficientFunds
         );
-        **pot_ai.try_borrow_mut_lamports()? -= house_fee;
-        **house_ai.try_borrow_mut_lamports()? += house_fee;
-    }
 
-    if net_winnings > 0 {
-        let round_rw = ctx.accounts.round_state.load()?;
-        let winner_pubkey = round_rw.players[winner_index as usize].pubkey;
-        let (expected_escrow, _bump) =
-            Pubkey::find_program_address(&[b"user_escrow", winner_pubkey.as_ref()], ctx.program_id);
-        require!(
-            expected_escrow == ctx.accounts.user_escrow.key(),
-            ErrorCode::UnauthorizedAccess
+        **game_pot_account_info.try_borrow_mut_lamports()? -= house_fee;
+        **house_wallet_account_info.try_borrow_mut_lamports()? += house_fee;
+        msg!(
+            "Transferred {} SOL fee from GamePotSol to HouseWallet.",
+            house_fee
         );
-
-        let pot_ai = ctx.accounts.game_pot_sol.to_account_info();
-        let escrow_ai = ctx.accounts.user_escrow.to_account_info();
-        let rent = Rent::get()?.minimum_balance(pot_ai.data_len());
-        require!(
-            pot_ai.lamports().checked_sub(net_winnings).unwrap_or(0) >= rent,
-            ErrorCode::InsufficientFunds
-        );
-        **pot_ai.try_borrow_mut_lamports()? -= net_winnings;
-        **escrow_ai.try_borrow_mut_lamports()? += net_winnings;
-        let escrow = &mut ctx.accounts.user_escrow;
-        escrow.balance = escrow
-            .balance
-            .checked_add(net_winnings)
-            .ok_or(ErrorCode::GameCalculationError)?;
+    } else {
+        msg!("No house fee to transfer (fee is zero).");
     }
 
     msg!("--- process_finalize_round finished ---");

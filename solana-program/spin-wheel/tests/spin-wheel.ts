@@ -1,30 +1,17 @@
 import * as anchor from "@coral-xyz/anchor";
-import type { Program } from "@coral-xyz/anchor";
 import { BN } from "bn.js";
 import {
     TOKEN_2022_PROGRAM_ID,
     ASSOCIATED_TOKEN_PROGRAM_ID,
-    getAssociatedTokenAddressSync,
     getOrCreateAssociatedTokenAccount,
     getAccount,
     getMint
 } from "@solana/spl-token";
-import type { SpinWheel } from "../target/types/spin_wheel";
-import { assert, expect } from "chai";
+import { assert } from "chai";
 import { TestState } from "./state";
 
 const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
-
-const program = anchor.workspace.SpinWheel as Program<SpinWheel>;
-
-const recipientKeypair = new anchor.web3.Keypair();
-
-const [mintAuthorityPda] =
-    anchor.web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("mint_authority")],
-        program.programId
-    );
 
 describe('spin-wheel token tests with PDA mint authority', () => {
     let testState: TestState;

@@ -90,10 +90,11 @@ pub struct PlayerCashinoRewards {
 pub enum RoundStatus {
     #[default]
     Active = 0,
-    WinnerDeterminedFeePaid = 1,
-    RewardPotAccountsCreated = 2,
-    TokensMintedForRewards = 3,
-    RewardsProcessed = 4,
+    AwaitingSolClaim = 1,
+    SolClaimed = 2,
+    RewardPotAccountsCreated = 3,
+    TokensMintedForRewards = 4,
+    RewardsProcessed = 5,
 }
 
 #[account(zero_copy)]
@@ -124,8 +125,15 @@ pub struct RoundState {
     pub has_winner_val: u8,
     pub winner_index_val: u8,
 
-    pub _padding2: [u8; 5],
+    pub _padding_to_align_house_fee: [u8; 5],
+
     pub house_sol_fee: u64,
+
+    pub winner_sol_pubkey: Pubkey,
+    pub winner_sol_amount: u64,
+    pub winner_sol_claimed: u8,
+
+    pub _final_padding_for_struct: [u8; 7],
 }
 
 impl RoundState {
@@ -148,6 +156,9 @@ impl RoundState {
         self.has_winner_val = 0;
         self.winner_index_val = 0;
         self.house_sol_fee = 0;
+        self.winner_sol_pubkey = Pubkey::default();
+        self.winner_sol_amount = 0;
+        self.winner_sol_claimed = 0;
     }
 
     pub fn get_revealed_seed(&self) -> Option<SeedArray> {
@@ -187,10 +198,11 @@ impl RoundState {
     pub fn get_status(&self) -> Result<RoundStatus> {
         match self.status_discriminant {
             0 => Ok(RoundStatus::Active),
-            1 => Ok(RoundStatus::WinnerDeterminedFeePaid),
-            2 => Ok(RoundStatus::RewardPotAccountsCreated),
-            3 => Ok(RoundStatus::TokensMintedForRewards),
-            4 => Ok(RoundStatus::RewardsProcessed),
+            1 => Ok(RoundStatus::AwaitingSolClaim),
+            2 => Ok(RoundStatus::SolClaimed),
+            3 => Ok(RoundStatus::RewardPotAccountsCreated),
+            4 => Ok(RoundStatus::TokensMintedForRewards),
+            5 => Ok(RoundStatus::RewardsProcessed),
             _ => Err(error!(ErrorCode::InvalidStatusDiscriminant)),
         }
     }
@@ -325,6 +337,13 @@ pub mod spin_wheel {
             ctx,
             amount_to_withdraw,
         )
+    }
+
+    pub fn claim_sol_winnings(
+        ctx: Context<ClaimSolWinnings>,
+        round_id_for_pdas: u64,
+    ) -> Result<()> {
+        instructions::claim_sol_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
     }
 
     // pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {

@@ -30,3 +30,6 @@ pub use deposit_sol::*;
 
 pub mod withdraw_sol_from_platform;
 pub use withdraw_sol_from_platform::*;
+
+pub mod claim_sol_winnings;
+pub use claim_sol_winnings::*;

@@ -81,5 +81,11 @@ pub enum ErrorCode {
     #[msg("Withdrawal would make the escrow account rent-deficient.")]
     WithdrawWouldMakeEscrowRentDeficient,
     #[msg("Invalid house wallet address provided for fee collection.")]
-    InvalidHouseWalletAddress
+    InvalidHouseWalletAddress,
+    #[msg("The caller is not the recorded SOL winner for this round.")]
+    NotTheSolWinner,
+    #[msg("SOL winnings for this round have already been claimed.")]
+    SolWinningsAlreadyClaimed,
+    #[msg("Round is not in the AwaitingSolClaim state.")]
+    RoundNotInAwaitingSolClaimState,
 }

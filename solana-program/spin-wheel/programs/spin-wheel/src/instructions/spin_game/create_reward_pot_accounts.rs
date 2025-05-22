@@ -24,7 +24,7 @@ pub struct CreateRewardPotAccounts<'info> {
         mut, 
         seeds = [b"round_state".as_ref(), &round_id_for_pdas.to_le_bytes()],
         bump,
-        constraint = round_state.load()?.status_discriminant == RoundStatus::WinnerDeterminedFeePaid as u8 @ ErrorCode::RoundNotInCorrectState,
+        constraint = round_state.load()?.status_discriminant == RoundStatus::SolClaimed as u8 @ ErrorCode::RoundNotInCorrectState,
     )]
     pub round_state: AccountLoader<'info, RoundState>,
 
@@ -66,6 +66,10 @@ pub fn process_create_reward_pot_accounts(
     msg!("--- Instruction: CreateRewardPotAccounts ---");
     msg!("Authority: {}", ctx.accounts.authority.key());
     msg!("Target Round ID (for PDAs): {}", round_id_for_pdas);
+    
+    let current_status = ctx.accounts.round_state.load()?.get_status()?;
+    msg!("Current round status for constraint check (should be SolClaimed): {:?}", current_status);
+
 
     let round_cashino_pot_data = &mut ctx.accounts.round_cashino_rewards_pot_account;
     round_cashino_pot_data.round_id = round_id_for_pdas;
@@ -76,8 +80,8 @@ pub fn process_create_reward_pot_accounts(
          ctx.accounts.round_cashino_rewards_pot_ata.key(),
          round_id_for_pdas);
 
-    let mut round_state = &mut ctx.accounts.round_state.load_mut()?;
-    round_state.status_discriminant = RoundStatus::RewardPotAccountsCreated as u8;
+    let mut round_state = ctx.accounts.round_state.load_mut()?;
+    round_state.set_status(RoundStatus::RewardPotAccountsCreated);
     msg!("Round {} status updated to RewardPotAccountsCreated.", round_state.id);
 
     msg!("--- CreateRewardPotAccounts finished ---");
