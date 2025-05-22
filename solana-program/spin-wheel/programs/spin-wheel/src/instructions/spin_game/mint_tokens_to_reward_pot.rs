@@ -97,7 +97,7 @@ pub fn process_mint_tokens_to_reward_pot(
         total_cashino_to_mint_for_round
     );
 
-    let mut round_state = &mut ctx.accounts.round_state.load_mut()?;
+    let round_state = &mut ctx.accounts.round_state.load_mut()?;
     round_state.total_cashino_minted_for_round = total_cashino_to_mint_for_round;
     round_state.status_discriminant = RoundStatus::TokensMintedForRewards as u8;
     msg!("Round {} status updated to TokensMintedForRewards. total_cashino_minted_for_round set in RoundState.",

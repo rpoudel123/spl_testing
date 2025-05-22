@@ -26,7 +26,7 @@ pub fn process_calculate_reward_entitlements(
     msg!("--- Instruction: CalculateRewardEntitlements ---");
     msg!("Target Round ID (for PDAs): {}", round_id_for_pdas);
 
-    let mut round_state = &mut ctx.accounts.round_state.load_mut()?;
+    let round_state = &mut ctx.accounts.round_state.load_mut()?;
     let total_cashino_minted_for_round = round_state.total_cashino_minted_for_round;
 
     msg!(

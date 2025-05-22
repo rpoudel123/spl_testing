@@ -1,9 +1,15 @@
+use crate::MINT_AUTHORITY_SEED;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{transfer_fee_set, Mint, Token2022, TransferFeeSetTransferFee};
 
 #[derive(Accounts)]
 pub struct UpdateFee<'info> {
-    pub authority: Signer<'info>,
+    /// CHECK: The mint_authority_pda, which is the authority for configuring transfer fees.
+    #[account(
+        seeds = [MINT_AUTHORITY_SEED],
+        bump
+    )]
+    pub pda_authority: AccountInfo<'info>,
 
     #[account(mut)]
     pub mint_account: InterfaceAccount<'info, Mint>,
@@ -15,10 +21,10 @@ pub fn process_update_fee(
     new_transfer_fee_basis_points: u16,
     new_maximum_fee: u64,
 ) -> Result<()> {
-    msg!("--- Instruction: UpdateFee ---");
+    msg!("--- Instruction: UpdateFee (PDA Signed) ---");
     msg!(
-        "Authority (expected Transfer Fee Config Authority): {}",
-        ctx.accounts.authority.key()
+        "PDA Authority (used for CPI signing): {}",
+        ctx.accounts.pda_authority.key()
     );
     msg!(
         "Mint Account to update: {}",
@@ -31,14 +37,19 @@ pub fn process_update_fee(
     );
     msg!("Attempting to set new Maximum Fee: {}", new_maximum_fee);
 
+    let bump = ctx.bumps.pda_authority;
+    let pda_signer_seeds: &[&[u8]] = &[MINT_AUTHORITY_SEED, &[bump]];
+    let signer_seeds = &[&pda_signer_seeds[..]];
+
     transfer_fee_set(
-        CpiContext::new(
+        CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             TransferFeeSetTransferFee {
                 token_program_id: ctx.accounts.token_program.to_account_info(),
                 mint: ctx.accounts.mint_account.to_account_info(),
-                authority: ctx.accounts.authority.to_account_info(),
+                authority: ctx.accounts.pda_authority.to_account_info(),
             },
+            signer_seeds,
         ),
         new_transfer_fee_basis_points,
         new_maximum_fee,

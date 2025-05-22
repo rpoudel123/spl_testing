@@ -1,3 +1,4 @@
+use crate::MINT_AUTHORITY_SEED;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
     withdraw_withheld_tokens_from_mint, Mint, Token2022, TokenAccount,
@@ -6,7 +7,12 @@ use anchor_spl::token_interface::{
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
-    pub authority: Signer<'info>,
+    /// CHECK: The mint_authority_pda, which is the authority for withdrawing withheld tokens.
+    #[account(
+        seeds = [MINT_AUTHORITY_SEED],
+        bump
+    )]
+    pub pda_authority: AccountInfo<'info>,
 
     #[account(mut)]
     pub mint_account: InterfaceAccount<'info, Mint>,
@@ -18,10 +24,10 @@ pub struct Withdraw<'info> {
 }
 
 pub fn process_withdraw(ctx: Context<Withdraw>) -> Result<()> {
-    msg!("--- Instruction: Withdraw ---");
+    msg!("--- Instruction: Withdraw (PDA Signed) ---");
     msg!(
-        "Authority (expected Withdraw Withheld Authority): {}",
-        ctx.accounts.authority.key()
+        "PDA Authority (used for CPI signing): {}",
+        ctx.accounts.pda_authority.key()
     );
     msg!(
         "Mint Account (source of withheld fees): {}",
@@ -33,14 +39,19 @@ pub fn process_withdraw(ctx: Context<Withdraw>) -> Result<()> {
     );
     msg!("Token Program: {}", ctx.accounts.token_program.key());
 
-    withdraw_withheld_tokens_from_mint(CpiContext::new(
+    let bump = ctx.bumps.pda_authority;
+    let pda_signer_seeds: &[&[u8]] = &[MINT_AUTHORITY_SEED, &[bump]];
+    let signer_seeds = &[&pda_signer_seeds[..]];
+
+    withdraw_withheld_tokens_from_mint(CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         WithdrawWithheldTokensFromMint {
             token_program_id: ctx.accounts.token_program.to_account_info(),
             mint: ctx.accounts.mint_account.to_account_info(),
             destination: ctx.accounts.token_account.to_account_info(),
-            authority: ctx.accounts.authority.to_account_info(),
+            authority: ctx.accounts.pda_authority.to_account_info(),
         },
+        signer_seeds,
     ))?;
 
     msg!("withdraw_withheld_tokens_from_mint CPI successful.");

@@ -9,6 +9,7 @@ use anchor_spl::{
             extension::{transfer_fee::TransferFeeConfig, ExtensionType},
             pod::PodMint,
             state::Mint as MintState,
+            ID as spl_token_2022_program_id,
         },
         InitializeMint2,
     },
@@ -18,10 +19,13 @@ use anchor_spl::{
     },
 };
 
+use crate::error::ErrorCode;
+use crate::MAX_HOUSE_FEE_PERCENTAGE;
+
 #[derive(Accounts)]
 pub struct InitializeToken2022<'info> {
     #[account(mut)]
-    pub payer: Signer<'info>, // Paying for the account creation
+    pub payer: Signer<'info>,
     #[account(mut)]
     pub mint_account: Signer<'info>,
     /// CHECK: The PDA that will be the mint authority for the new mint.
@@ -29,8 +33,11 @@ pub struct InitializeToken2022<'info> {
         seeds=[MINT_AUTHORITY_SEED],
         bump
     )]
-    pub mint_authority_pda: AccountInfo<'info>, // PDA whose key will be set as mint authority
+    pub mint_authority_pda: AccountInfo<'info>,
 
+    #[account(
+        address = spl_token_2022_program_id @ ErrorCode::InvalidTokenProgram
+    )]
     pub token_program: Program<'info, Token2022>,
     pub system_program: Program<'info, System>,
 }
@@ -57,6 +64,20 @@ pub fn process_initialize(
     );
     msg!("Token Program: {}", ctx.accounts.token_program.key());
     msg!("System Program: {}", ctx.accounts.system_program.key());
+
+    if transfer_fee_basis_points > MAX_HOUSE_FEE_PERCENTAGE {
+        msg!(
+            "Error: Transfer fee basis points {} exceed maximum {}",
+            transfer_fee_basis_points,
+            MAX_HOUSE_FEE_PERCENTAGE
+        );
+        return err!(ErrorCode::InvalidHouseFeeConfig);
+    }
+
+    if transfer_fee_basis_points > 0 && maximum_fee == 0 {
+        msg!("Error: Maximum fee cannot be 0 if transfer fee basis points are greater than 0");
+        return err!(ErrorCode::FeeCalculationFailed);
+    }
 
     let mint_size =
         ExtensionType::try_calculate_account_len::<PodMint>(&[ExtensionType::TransferFeeConfig])?;
@@ -89,8 +110,8 @@ pub fn process_initialize(
         ctx.accounts.mint_account.key()
     );
 
-    let transfer_fee_config_authority = Some(ctx.accounts.payer.key());
-    let withdraw_withheld_authority = Some(ctx.accounts.payer.key());
+    let transfer_fee_config_authority = Some(ctx.accounts.mint_authority_pda.key());
+    let withdraw_withheld_authority = Some(ctx.accounts.mint_authority_pda.key());
     msg!(
         "Transfer Fee Config Authority (for this mint): {:?}",
         transfer_fee_config_authority

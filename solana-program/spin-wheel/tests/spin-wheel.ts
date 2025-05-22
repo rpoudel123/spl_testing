@@ -202,10 +202,9 @@ describe('spin-wheel token tests with PDA mint authority', () => {
         const transactionSignature = await testState.program.methods
             .withdraw()
             .accounts({
-                authority: testState.wallet.publicKey,
+                pdaAuthority: testState.mintAuthorityPda,
                 mintAccount: testState.mintKeypair.publicKey,
                 tokenAccount: testState.senderTokenAccountAddress!,
-                destinationTokenAccount: testState.senderTokenAccountAddress!,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
             })
             .signers([testState.wallet.payer])
@@ -222,7 +221,7 @@ describe('spin-wheel token tests with PDA mint authority', () => {
         const transactionSignature = await testState.program.methods
             .updateFee(newTransferFeeBasisPoints, newMaximumFee)
             .accounts({
-                authority: testState.wallet.publicKey,
+                pdaAuthority: testState.mintAuthorityPda,
                 mintAccount: testState.mintKeypair.publicKey,
                 tokenProgram: TOKEN_2022_PROGRAM_ID,
             })

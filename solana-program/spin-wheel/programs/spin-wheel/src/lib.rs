@@ -3,7 +3,7 @@ mod instructions;
 use bytemuck::{Pod, Zeroable};
 use instructions::*;
 
-declare_id!("21HrGEnTMroXcp54bTCQKmgYS3uvbczsMRV6cBWGAnDV");
+declare_id!("AUSCcZQqFbidkXRMrPzNRy9irum2StmJX1Fdit3ejoXs");
 
 mod error;
 pub use error::ErrorCode;
@@ -346,11 +346,4 @@ pub mod spin_wheel {
         instructions::claim_sol_winnings::process_claim_sol_winnings(ctx, round_id_for_pdas)
     }
 
-    // pub fn update_game_fee(ctx: Context<UpdateGameFee>, new_fee_basis_points: u16) -> Result<()> {
-    //     instructions::game_admin::process_update_game_fee(ctx, new_fee_basis_points)
-    // }
-    //
-    // pub fn update_game_house_wallet(ctx: Context<UpdateGameHouseWallet>) -> Result<()> {
-    //     instructions::game_admin::process_update_game_house_wallet(ctx)
-    // }
 }
